@@ -380,6 +380,10 @@ if CLIENT then
 
 		local ent = net.ReadEntity()
 		if !IsValid(ent) then return end
+		//If you merge, unmerge, then merge again an animprop without opening the menu between them, it'll add a duplicate node unless we check for this. 
+		//For some reason, this doesn't happen with normal merged ents, because the original node gets removed on unmerge somewhere i can't figure out - 
+		//in fact, doing this check with normal ents can give false positives sometimes and prevent any node from being added at all.
+		if IsValid(panel.modellist.AllNodes[ent:EntIndex()]) and ent:GetClass() == "prop_animated" then return end 
 
 		local parent = ent:GetParent()
 		if parent.AttachedEntity then parent = parent.AttachedEntity end
