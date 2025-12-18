@@ -210,14 +210,6 @@ if SERVER then
 
 					if const.Type == "PartCtrl_Ent" or const.Type == "PartCtrl_SpecialEffect" and IsValid(const.Ent1) then
 						target:DontDeleteOnRemove(const.Ent1) //Make sure we also clear deleteonremove for unparented cpoints
-						if const.Type == "PartCtrl_Ent" then
-							//Tell clients to retrieve the updated info table (the constraint func will change the relevant value to point to our ent)
-							timer.Simple(0.1, function() //do this on a timer, otherwise the advbonemerge ent might not exist on the client yet when they receive the new table
-								net.Start("PartCtrl_InfoTableUpdate_SendToCl")
-									net.WriteEntity(const.Ent1)
-								net.Broadcast()
-							end)
-						end
 					end
 
 					//MsgN("")
@@ -226,6 +218,12 @@ if SERVER then
 					duplicator.CreateConstraintFromTable(const, entstab)
 				end
 			end
+		end
+		//Unbreak all ParticleControlOverhaul fx attached to the ent or any of its children
+		if PartCtrl_RefreshAllChildFx then 
+			timer.Simple(0.1, function() //do this on a timer, otherwise the advbonemerge ent might not exist on the client yet when they receive the new table
+				PartCtrl_RefreshAllChildFx(newent)
+			end)
 		end
 
 
