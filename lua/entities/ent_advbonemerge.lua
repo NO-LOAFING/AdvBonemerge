@@ -9,6 +9,15 @@ ENT.RenderGroup			= false //let the engine set the rendergroup by itself
 
 
 
+function ENT:SetupDataTables()
+
+	self:NetworkVar("Bool", 0, "PartCtrl_MergedGrip")
+
+end
+
+
+
+
 function ENT:Initialize()
 
 	if SERVER then
@@ -23,13 +32,6 @@ function ENT:Initialize()
 
 		self:SetCollisionBounds(vector_origin,vector_origin)  //if we don't change this, the duplicator will try to compensate for the "size" of merged models when pasting them, which can cause problems if we're merging big props and scaling them down
 		self:SetTransmitWithParent(true)
-
-		//If this is a merged ParticleControlOverhaul grip point, then do some special handling
-		//if istable(self.AdvBone_UnmergeInfo) and self.AdvBone_UnmergeInfo.PartCtrl_Grip then
-		if self.PartCtrl_MergedGrip then
-			self:SetNWBool("PartCtrl_MergedGrip", true)
-			self:SetModelScale(0) //compress the model down to a single point so that model-covering effects like tf2 burningplayer aren't suspiciously melon-shaped
-		end
 
 		return
 
@@ -980,7 +982,7 @@ if CLIENT then
 
 
 				local matrscl = matr:GetScale()
-				local mergedgrip = self:GetNWBool("PartCtrl_MergedGrip")
+				local mergedgrip = self:GetPartCtrl_MergedGrip()
 				if !mergedgrip and (self.AdvBone_StaticPropUsedRenderMultiply or Vector(math.Round(matrscl.x,4),math.Round(matrscl.y,4),math.Round(matrscl.z,4)) != mdlsclvec) then
 					//Because EnableMatrix's scale is multiplicative, we actually need to counteract the model scale before applying it to ourselves or else it'll be doubled
 					matr:SetScale( Vector(ourscale.x / mdlscl, ourscale.y / mdlscl, ourscale.z / mdlscl) )
@@ -1247,7 +1249,7 @@ if SERVER then
 				end
 			end)
 
-			if !self.PartCtrl_MergedGrip then //unmerged particle grips don't need an undo, because we already have a separate one for the particle itself
+			if !self:GetPartCtrl_MergedGrip() then //unmerged particle grips don't need an undo, because we already have a separate one for the particle itself
 				//Add an undo entry
 				local printname = newent:GetClass() or "Entity"
 				if newent.PrintName and newent.PrintName != "" then printname = tostring(newent.PrintName) end
@@ -1423,7 +1425,6 @@ duplicator.RegisterEntityClass("ent_advbonemerge", function(ply, data)
 	dupedent.AdvBone_UnmergeInfo = unmergeinfo  //yeah, i'm not totally sure why this is necessary, but if we don't do this, it won't retrieve the table correctly or something
 
 	dupedent:SetNWBool("DisableBeardFlexifier", data.DisableBeardFlexifier)
-	dupedent.PartCtrl_MergedGrip = data.PartCtrl_MergedGrip
 
 	dupedent:Spawn()
 	dupedent:Activate() 

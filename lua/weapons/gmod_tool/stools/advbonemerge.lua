@@ -116,7 +116,7 @@ if SERVER then
 		//Copy over DisableBeardFlexifier, just in case we're an unmerged ent that inherited this value
 		newent:SetNWBool("DisableBeardFlexifier", oldent:GetNWBool("DisableBeardFlexifier"))
 		//Store a value if we're a merged ParticleControlOverhaul grip point
-		newent.PartCtrl_MergedGrip = oldent.PartCtrl_Grip
+		newent:SetPartCtrl_MergedGrip(oldent.PartCtrl_Grip)
 
 		//Create a BoneInfo table - this is used to store bone manipulation info other than the standard Position/Angle/Scale values already available by default
 		local boneinfo = {}
@@ -337,7 +337,7 @@ function TOOL:LeftClick(trace)
 			undo.AddEntity(const)  //the constraint entity will unmerge newent upon being removed
 			undo.SetPlayer(ply)
 		local nodename = newent:GetModel()
-		if newent.PartCtrl_MergedGrip then
+		if (newent.GetPartCtrl_MergedGrip and newent:GetPartCtrl_MergedGrip()) then
 			//Merged particle effects display the name of the particle instead
 			nodename = "particle" //placeholder in case this fails somehow
 			local tab = constraint.FindConstraint(newent, "PartCtrl_Ent")
@@ -1119,7 +1119,7 @@ if CLIENT then
 										end
 									end
 									if points > 1 then
-										nodename = nodename .. " Pt. #" .. point_num
+										nodename = nodename .. " (Pt. #" .. point_num .. ")"
 									end
 								else
 									nodename = k.PrintName
@@ -1131,7 +1131,7 @@ if CLIENT then
 					end
 					if modelent:GetClass() == "prop_animated" then
 						nodename = nodename .. " (animated)"
-					elseif modelent.PartCtrl_Grip or modelent:GetNWBool("PartCtrl_MergedGrip") then
+					elseif modelent.PartCtrl_Grip or (modelent.GetPartCtrl_MergedGrip and modelent:GetPartCtrl_MergedGrip()) then
 						doparticlenamethink = true
 						DoParticleNodeName()
 						//If we weren't able to get the particle name yet, then give it a placeholder name until the think func can replace it
@@ -1141,7 +1141,7 @@ if CLIENT then
 					end
 					local node = parent:AddNode(nodename)
 					local nodeseticon = function(skinid) //this is a function so we can update the icon skin when using the skin utility
-						if modelent.PartCtrl_Grip or modelent:GetNWBool("PartCtrl_MergedGrip") then
+						if modelent.PartCtrl_Grip or (modelent.GetPartCtrl_MergedGrip and modelent:GetPartCtrl_MergedGrip()) then
 							node.Icon:SetImage("icon16/fire.png")
 							return
 						end
@@ -1900,7 +1900,7 @@ if CLIENT then
 						slider:SetAlpha(255)
 					end
 				end
-				if ent.PartCtrl_Grip or ent:GetNWBool("PartCtrl_MergedGrip") then
+				if ent.PartCtrl_Grip or (ent.GetPartCtrl_MergedGrip and ent:GetPartCtrl_MergedGrip())  then
 					SetSliderDisabled(panel.slider_scale_x, true)
 					SetSliderDisabled(panel.slider_scale_y, true)
 					SetSliderDisabled(panel.slider_scale_z, true)
