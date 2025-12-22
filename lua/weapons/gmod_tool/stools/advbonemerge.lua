@@ -1107,6 +1107,10 @@ if CLIENT then
 							for k, _ in pairs (modelent.PartCtrl_ParticleEnts) do
 								if k.GetParticleName and istable(k.ParticleInfo) then
 									nodename = k:GetParticleName()
+									//Use nice capitalized display name if possible
+									if (PartCtrl_ProcessedPCFs[k:GetPCF()] and PartCtrl_ProcessedPCFs[k:GetPCF()][k:GetParticleName()]) then
+										str = PartCtrl_ProcessedPCFs[k:GetPCF()][k:GetParticleName()].nicename
+									end
 									doparticlenamethink = false
 									//If the particle has multiple position cpoints, then add this cpoint's number to the nodename,
 									//to tell them apart in case we merge more than one of them
