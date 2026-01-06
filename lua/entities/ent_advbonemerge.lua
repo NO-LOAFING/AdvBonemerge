@@ -237,17 +237,17 @@ if CLIENT then
 					//Get the bone's offset from its parent
 					local parentmatr = self.csmodel:GetBoneMatrix(parentboneid)
 					if ourmatr == nil then return end  //TODO: why does this happen? does the model need to be precached or something?
-					newentry["posoffset"], newentry["angoffset"] = WorldToLocal(ourmatr:GetTranslation(), ourmatr:GetAngles(), parentmatr:GetTranslation(), parentmatr:GetAngles())
+					newentry.posoffset, newentry.angoffset = WorldToLocal(ourmatr:GetTranslation(), ourmatr:GetAngles(), parentmatr:GetTranslation(), parentmatr:GetAngles())
 				else
 					//If a bone doesn't have a parent, then get its offset from the model origin
 					ourmatr = self.csmodel:GetBoneMatrix(i)
 					if ourmatr != nil then
-						newentry["posoffset"], newentry["angoffset"] = WorldToLocal(ourmatr:GetTranslation(), ourmatr:GetAngles(), self.csmodel:GetPos(), self.csmodel:GetAngles())
+						newentry.posoffset, newentry.angoffset = WorldToLocal(ourmatr:GetTranslation(), ourmatr:GetAngles(), self.csmodel:GetPos(), self.csmodel:GetAngles())
 					end
 				end
-				if !newentry["posoffset"] then
-					newentry["posoffset"] = Vector(0,0,0)
-					newentry["angoffset"] = Angle(0,0,0)
+				if !newentry.posoffset then
+					newentry.posoffset = Vector(0,0,0)
+					newentry.angoffset = Angle(0,0,0)
 				end
 				table.insert(defaultboneoffsets, i, newentry)
 
@@ -438,14 +438,14 @@ if CLIENT then
 							if Vector(math.Round(matrscl.x,4), math.Round(matrscl.y,4), math.Round(matrscl.z,4)) != mdlsclvec then
 								local angmatr = Matrix()
 								angmatr:SetAngles(self.AdvBone_Angs[parentboneid] or matr:GetAngles())
-								angmatr:Rotate(self.AdvBone_DefaultBoneOffsets[i]["angoffset"])
+								angmatr:Rotate(self.AdvBone_DefaultBoneOffsets[i].angoffset)
 								angmatr:Rotate(self:GetManipulateBoneAngles(i))
 								self.AdvBone_Angs[i] = angmatr:GetAngles()
 								angmatr = nil
 							end
 
 							//Apply pos offset
-							matr:Translate(self.AdvBone_DefaultBoneOffsets[i]["posoffset"])
+							matr:Translate(self.AdvBone_DefaultBoneOffsets[i].posoffset)
 						else
 							//Create a new matrix and just copy over the translation and angle
 							matr = Matrix()
@@ -459,7 +459,7 @@ if CLIENT then
 							//(our distance from the parent bone should be the same regardless of whether we're scaling with it or not - otherwise we'd
 							//end up embedded inside the parent bone if it was scaled up, or end up far away from it if it was scaled down)
 							local tr1 = parentmatr:GetTranslation()
-							parentmatr:Translate(self.AdvBone_DefaultBoneOffsets[i]["posoffset"])
+							parentmatr:Translate(self.AdvBone_DefaultBoneOffsets[i].posoffset)
 							local tr2 = parentmatr:GetTranslation()
 							local posoffsetscaled = WorldToLocal(tr2, Angle(), tr1, matr:GetAngles())
 							matr:Translate(posoffsetscaled / mdlscl)
@@ -467,7 +467,7 @@ if CLIENT then
 
 						//Apply pos manip and ang offset+manip
 						matr:Translate(self:GetManipulateBonePosition(i))
-						matr:Rotate(self.AdvBone_DefaultBoneOffsets[i]["angoffset"])
+						matr:Rotate(self.AdvBone_DefaultBoneOffsets[i].angoffset)
 						matr:Rotate(self:GetManipulateBoneAngles(i))
 					end
 				end
@@ -669,11 +669,11 @@ if SERVER then
 				local parent = ent:GetParent()
 				if IsValid(parent) then
 					if parent.AttachedEntity then parent = parent.AttachedEntity end
-					net.WriteInt(parent:LookupBone( entry["parent"] ) or -1, 9)
+					net.WriteInt(parent:LookupBone(entry.parent) or -1, 9)
 				else
 					net.WriteInt(-1, 9)
 				end
-				net.WriteBool(entry["scale"])
+				net.WriteBool(entry.scale)
 			end
 		net.Send(ply)
 
@@ -741,8 +741,8 @@ if CLIENT then
 			end
 
 			tab[key] = {
-				["parent"] = parentstr,
-				["scale"] = net.ReadBool(),
+				parent = parentstr,
+				scale = net.ReadBool(),
 			}
 		end
 		

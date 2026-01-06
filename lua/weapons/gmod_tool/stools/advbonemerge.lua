@@ -3,8 +3,8 @@ TOOL.Name = "Advanced Bonemerge"
 TOOL.Command = nil
 TOOL.ConfigName = "" 
 
-TOOL.ClientConVar["matchnames"] = "1"
-TOOL.ClientConVar["drawhalo"] = "1"
+TOOL.ClientConVar.matchnames = "1"
+TOOL.ClientConVar.drawhalo = "1"
 
 TOOL.Information = {
 	{name = "info1", stage = 1, icon = "gui/info.png"},
@@ -32,13 +32,13 @@ end
 
 
 local ConstraintsToPreserve = {
-	["AdvBoneMerge"] = true,
-	["AttachParticleControllerBeam"] = true, //Advanced Particle Controller addon
-	["PartCtrl_Ent"] = true, //ParticleControlOverhaul
-	["PartCtrl_SpecialEffect"] = true, //ParticleControlOverhaul
-	["BoneMerge"] = true, //Bone Merger addon
-	["EasyBonemerge"] = true, //Easy Bonemerge Tool addon
-	["CompositeEntities_Constraint"] = true, //Composite Bonemerge addon
+	AdvBoneMerge = true,
+	AttachParticleControllerBeam = true, //Advanced Particle Controller addon
+	PartCtrl_Ent = true, //ParticleControlOverhaul
+	PartCtrl_SpecialEffect = true, //ParticleControlOverhaul
+	BoneMerge = true, //Bone Merger addon
+	EasyBonemerge = true, //Easy Bonemerge Tool addon
+	CompositeEntities_Constraint = true, //Composite Bonemerge addon
 }
 
 if SERVER then
@@ -127,16 +127,16 @@ if SERVER then
 			}
 
 			if target.AdvBone_BoneInfo and target.AdvBone_BoneInfo[i] then
-				newsubtable["scale"] = target.AdvBone_BoneInfo[i]["scale"]
+				newsubtable.scale = target.AdvBone_BoneInfo[i].scale
 			end
 
 			if !keepparentempty then
 				if target.AdvBone_BoneInfo and target.AdvBone_BoneInfo[i]
-				and ( parent:LookupBone( target.AdvBone_BoneInfo[i]["parent"] ) or target.AdvBone_BoneInfo[i]["parent"] == "" ) then
+				and ( parent:LookupBone( target.AdvBone_BoneInfo[i].parent ) or target.AdvBone_BoneInfo[i].parent == "" ) then
 					//If oldent was unmerged and already has a BoneInfo table for us to use, then get the value from it, but only if the listed target bone exists/is an empty string
-					newsubtable["parent"] = target.AdvBone_BoneInfo[i]["parent"]
+					newsubtable.parent = target.AdvBone_BoneInfo[i].parent
 				elseif matchnames and i != -1 and parent:LookupBone( oldent:GetBoneName(i) ) then
-					newsubtable["parent"] = string.lower( oldent:GetBoneName(i) )
+					newsubtable.parent = string.lower( oldent:GetBoneName(i) )
 				end
 			end
 
@@ -718,15 +718,15 @@ if SERVER then
 			if ent.AdvBone_BoneInfo and ent.AdvBone_BoneInfo[entbone] then
 				if newtargetbone != -1 and ent:GetParent() != NULL then
 					if ent:GetParent().AttachedEntity then
-						ent.AdvBone_BoneInfo[entbone]["parent"] = ent:GetParent().AttachedEntity:GetBoneName(newtargetbone)
+						ent.AdvBone_BoneInfo[entbone].parent = ent:GetParent().AttachedEntity:GetBoneName(newtargetbone)
 					else
-						ent.AdvBone_BoneInfo[entbone]["parent"] = ent:GetParent():GetBoneName(newtargetbone)
+						ent.AdvBone_BoneInfo[entbone].parent = ent:GetParent():GetBoneName(newtargetbone)
 					end
 				else
-					ent.AdvBone_BoneInfo[entbone]["parent"] = ""
+					ent.AdvBone_BoneInfo[entbone].parent = ""
 				end
 
-				ent.AdvBone_BoneInfo[entbone]["scale"] = newscaletarget
+				ent.AdvBone_BoneInfo[entbone].scale = newscaletarget
 
 				//Tell all the other clients that they need to update their BoneInfo tables to receive the changes (the original client already has the changes applied)
 				local filter = RecipientFilter()
@@ -959,8 +959,8 @@ if SERVER then
 			if IsValid(ent) then
 				if ent.AdvBone_BoneInfo and ent.AdvBone_BoneInfo[id] then
 					ent.AdvBone_BoneInfo[id] = {
-						["parent"] = targetbone,
-						["scale"] = scaletarget,
+						parent = targetbone,
+						scale = scaletarget,
 					}
 					//Wake up BuildBonePositions
 					AdvBone_ResetBoneChangeTime(ent)
@@ -1030,15 +1030,15 @@ if CLIENT then
 			if ent.AdvBone_BoneInfo and ent.AdvBone_BoneInfo[entbone] then
 				if newtargetbone != -1 and ent:GetParent() != NULL then
 					if ent:GetParent().AttachedEntity then
-						ent.AdvBone_BoneInfo[entbone]["parent"] = ent:GetParent().AttachedEntity:GetBoneName(newtargetbone)
+						ent.AdvBone_BoneInfo[entbone].parent = ent:GetParent().AttachedEntity:GetBoneName(newtargetbone)
 					else
-						ent.AdvBone_BoneInfo[entbone]["parent"] = ent:GetParent():GetBoneName(newtargetbone)
+						ent.AdvBone_BoneInfo[entbone].parent = ent:GetParent():GetBoneName(newtargetbone)
 					end
 				else
-					ent.AdvBone_BoneInfo[entbone]["parent"] = ""
+					ent.AdvBone_BoneInfo[entbone].parent = ""
 				end
 
-				ent.AdvBone_BoneInfo[entbone]["scale"] = newscaletarget
+				ent.AdvBone_BoneInfo[entbone].scale = newscaletarget
 			end
 		end
 
@@ -1231,15 +1231,15 @@ if CLIENT then
 							for id = bonecountmin, modelent:GetBoneCount() do
 								local entry = {}
 
-								entry["trans"] = modelent:GetManipulateBonePosition(id)
-								entry["rot"] = modelent:GetManipulateBoneAngles(id)
-								entry["scale"] = modelent:GetManipulateBoneScale(id)
+								entry.trans = modelent:GetManipulateBonePosition(id)
+								entry.rot = modelent:GetManipulateBoneAngles(id)
+								entry.scale = modelent:GetManipulateBoneScale(id)
 								if modelent.AdvBone_BoneInfo and modelent.AdvBone_BoneInfo[id] then
-									entry["targetbone"] = modelent.AdvBone_BoneInfo[id]["parent"]
-									entry["scaletarget"] = modelent.AdvBone_BoneInfo[id]["scale"]
+									entry.targetbone = modelent.AdvBone_BoneInfo[id].parent
+									entry.scaletarget = modelent.AdvBone_BoneInfo[id].scale
 								else
-									entry["targetbone"] = ""
-									entry["scaletarget"] = false
+									entry.targetbone = ""
+									entry.scaletarget = false
 								end
 
 								local entryid = modelent:GetBoneName(id)
@@ -1268,14 +1268,14 @@ if CLIENT then
 									//First, apply the new BoneInfo clientside
 									if modelent.AdvBone_BoneInfo and modelent.AdvBone_BoneInfo[id] then
 										modelent.AdvBone_BoneInfo[id] = {
-											["parent"] = entry["targetbone"],
-											["scale"] = entry["scaletarget"],
+											parent = entry.targetbone,
+											scale = entry.scaletarget,
 										}
 									end
 
 									//Then, compile information to be sent to the server for this bone
 									local serverentry = table.Copy(entry)
-									serverentry["id"] = id
+									serverentry.id = id
 									table.insert(serverinfo,serverentry)
 
 									if modelent == panel.modellist.selectedent then
@@ -1285,7 +1285,7 @@ if CLIENT then
 										//Update visuals of list entry for this bone
 										if panel.bonelist.Bones[id] then
 											local targetboneid = -1
-											if entry["targetbone"] != "" and IsValid(parent) then targetboneid = parent:LookupBone(entry["targetbone"]) end
+											if entry.targetbone != "" and IsValid(parent) then targetboneid = parent:LookupBone(entry.targetbone) end
 											panel.bonelist.Bones[id].HasTargetBone = targetboneid != -1
 										end
 									end
@@ -1302,14 +1302,14 @@ if CLIENT then
 
 								net.WriteInt(table.Count(serverinfo), 9)
 								for _, entry in pairs (serverinfo) do
-									net.WriteInt(entry["id"], 9)
+									net.WriteInt(entry.id, 9)
 
-									net.WriteString(entry["targetbone"])
-									net.WriteBool(entry["scaletarget"])
+									net.WriteString(entry.targetbone)
+									net.WriteBool(entry.scaletarget)
 										
-									net.WriteVector(entry["trans"])
-									net.WriteAngle(entry["rot"])
-									net.WriteVector(entry["scale"])
+									net.WriteVector(entry.trans)
+									net.WriteAngle(entry.rot)
+									net.WriteVector(entry.scale)
 								end
 							net.SendToServer()
 
@@ -1317,18 +1317,18 @@ if CLIENT then
 							//so their OnValueChanged functions don't change the values back
 							if selectedentry != nil then
 								panel.targetbonelist.PopulateTargetBoneList(panel.modellist.selectedent,panel.bonelist.selectedbone)
-								panel.checkbox_scaletarget:SetChecked(selectedentry["scaletarget"])
+								panel.checkbox_scaletarget:SetChecked(selectedentry.scaletarget)
 
-								panel.slider_trans_x:SetValue(selectedentry["trans"].x)
-								panel.slider_trans_y:SetValue(selectedentry["trans"].y)
-								panel.slider_trans_z:SetValue(selectedentry["trans"].z)
-								panel.slider_rot_p:SetValue(selectedentry["rot"].p)
-								panel.slider_rot_y:SetValue(selectedentry["rot"].y)
-								panel.slider_rot_r:SetValue(selectedentry["rot"].r)
-								panel.slider_scale_xyz:SetValue(selectedentry["scale"].x)  //ehh
-								panel.slider_scale_x:SetValue(selectedentry["scale"].x)
-								panel.slider_scale_y:SetValue(selectedentry["scale"].y)
-								panel.slider_scale_z:SetValue(selectedentry["scale"].z)
+								panel.slider_trans_x:SetValue(selectedentry.trans.x)
+								panel.slider_trans_y:SetValue(selectedentry.trans.y)
+								panel.slider_trans_z:SetValue(selectedentry.trans.z)
+								panel.slider_rot_p:SetValue(selectedentry.rot.p)
+								panel.slider_rot_y:SetValue(selectedentry.rot.y)
+								panel.slider_rot_r:SetValue(selectedentry.rot.r)
+								panel.slider_scale_xyz:SetValue(selectedentry.scale.x)  //ehh
+								panel.slider_scale_x:SetValue(selectedentry.scale.x)
+								panel.slider_scale_y:SetValue(selectedentry.scale.y)
+								panel.slider_scale_z:SetValue(selectedentry.scale.z)
 							end
 
 							surface.PlaySound("common/wpn_select.wav")
@@ -1444,7 +1444,7 @@ if CLIENT then
 							//Finger Poser utilities
 							if GetConVar("toolmode_allow_finger"):GetBool() and gamemode.Call("CanTool", ply, tr, "finger") then
 								local tool = ply:GetTool("finger")
-								if istable(tool) and tool["GetHandPositions"] then
+								if istable(tool) and tool.GetHandPositions then
 									local LeftHandMatrix, RightHandMatrix = tool:GetHandPositions(modelent)
 									if LeftHandMatrix then
 										local option = submenu:AddOption("Finger Poser: Select left hand", function()
@@ -1688,9 +1688,9 @@ if CLIENT then
 				panel.bonelist:SetHeight(300)
 			else
 				//Add a placeholder node - the DTree will break and become unusable if we empty it out and don't immediately add more nodes to it in the same function
-				panel.modellist.AllNodes["message"] = panel.modellist:AddNode("(select an object)")
-				panel.modellist.AllNodes["message"].Icon:SetImage("gui/info.png")
-				panel.modellist.TopNode = panel.modellist.AllNodes["message"]
+				panel.modellist.AllNodes.message = panel.modellist:AddNode("(select an object)")
+				panel.modellist.AllNodes.message.Icon:SetImage("gui/info.png")
+				panel.modellist.TopNode = panel.modellist.AllNodes.message
 
 				panel.bonelist:SetHeight(0)
 			end
@@ -1726,7 +1726,7 @@ if CLIENT then
 
 					local selectedtargetbone = -1
 					if ent.AdvBone_BoneInfo and ent.AdvBone_BoneInfo[id] then
-						local targetbonestr = ent.AdvBone_BoneInfo[id]["parent"]
+						local targetbonestr = ent.AdvBone_BoneInfo[id].parent
 						if targetbonestr != "" and IsValid(parent) then selectedtargetbone = parent:LookupBone(targetbonestr) end
 					end
 					if selectedtargetbone != -1 then line.HasTargetBone = true end
@@ -1868,7 +1868,7 @@ if CLIENT then
 				panel.slider_scale_xyz.TextArea:SetText( panel.slider_scale_xyz.Scratch:GetTextValue() )
 
 				if ent.AdvBone_BoneInfo and ent.AdvBone_BoneInfo[boneid] then 
-					panel.checkbox_scaletarget:SetChecked(ent.AdvBone_BoneInfo[boneid]["scale"])
+					panel.checkbox_scaletarget:SetChecked(ent.AdvBone_BoneInfo[boneid].scale)
 				else
 					panel.checkbox_scaletarget:SetChecked(false)
 				end
@@ -1950,7 +1950,7 @@ if CLIENT then
 
 			local selectedtargetbone = -1
 			if ent.AdvBone_BoneInfo and ent.AdvBone_BoneInfo[boneid] then
-				local targetbonestr = ent.AdvBone_BoneInfo[boneid]["parent"]
+				local targetbonestr = ent.AdvBone_BoneInfo[boneid].parent
 				if targetbonestr != "" and IsValid(parent) then selectedtargetbone = parent:LookupBone(targetbonestr) end
 			end
 
