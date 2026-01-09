@@ -89,6 +89,9 @@ end
 
 if CLIENT then
 
+	CreateClientConVar("cl_advbone_debug_sleep", 0, false, false, "If 1, show sleep status of ent_advbonemerge's BuildBonePositions function (red = asleep, green = awake)", 0, 1)
+	local cv_debug_sleep = GetConVar("cl_advbone_debug_sleep")
+
 	function ENT:BuildBonePositions(bonecount)
 		if !IsValid(self) then return end
 		self.BuildBonePositions_HasRun = true //Newly connected players will add this callback, but then wipe it; this tells the think func that it actually went through
@@ -176,12 +179,13 @@ if CLIENT then
 			end
 		end
 
-		//TEST: Display sleep status
-		--[[if skip then
-			self:SetColor( Color(255,0,0,255) )
-		else
-			self:SetColor( Color(0,255,0,255) )
-		end]]
+		if cv_debug_sleep:GetBool() then
+			if skip then
+				self:SetColor( Color(255,0,0,255) )
+			else
+				self:SetColor( Color(0,255,0,255) )
+			end
+		end
 		//If we're going to skip, then use cached bone matrices instead of computing new ones, and stop here
 		if !self.HasDrawn then //fix: don't let buildbonepositions fall asleep if we spawned offscreen and haven't been seen by the client yet, otherwise it'll save bad bone positions
 			self.LastBoneChangeTime = curtime
@@ -306,7 +310,7 @@ if CLIENT then
 		self.AdvBone_Angs = {}
 
 		//check if the bone matrices have changed at all since the last call
-		local BonesHaveChanged = false
+		local BonesHaveChanged = (self.LastBoneChangeTime == curtime) //don't bother checking this later if we already know they've changed
 
 		for i = -1, bonecount - 1 do
 
@@ -574,7 +578,9 @@ if CLIENT then
 					if self:GetBoneName(i) != "__INVALIDBONE__" then
 						self:SetBoneMatrix(i,matr)
 
+						//For sleep status, save bone matrices to table, and compare with previous table to tell if they've changed
 						if !BonesHaveChanged and matr != self.SavedBoneMatrices[i] then
+							//MsgN(self:GetBoneName(i), "\n", matr, "\n != \n", self.SavedBoneMatrices[i], "\n")
 							//if !self.SavedBoneMatrices[i] then
 								BonesHaveChanged = true
 							//else
