@@ -1226,9 +1226,13 @@ if CLIENT then
 						local option = menu:AddOption("Copy bone settings", function()
 							local copytab = {}
 
+							//Fix some bones not being copied and returning invalid (i.e. playermodel weapon bones)
+							modelent:SetupBones()
+							modelent:InvalidateBoneCache()
+
 							local bonecountmin = -1
 							if !modelent.AdvBone_BoneInfo or modelent:GetBoneName(0) == "static_prop" then bonecountmin = 0 end  //don't get bone -1 from ents that don't have origin manips
-							for id = bonecountmin, modelent:GetBoneCount() do
+							for id = bonecountmin, modelent:GetBoneCount() - 1 do
 								local entry = {}
 
 								entry.trans = modelent:GetManipulateBonePosition(id)
@@ -1243,13 +1247,20 @@ if CLIENT then
 								end
 
 								local entryid = modelent:GetBoneName(id)
+								//MsgN(id, " == ", entryid)
 								if id == -1 then
 									entryid = -1
 								end
 
-								copytab[entryid] = entry
+								if entryid != "__INVALIDBONE__" then
+									copytab[entryid] = entry
+								end
 							end
 							panel.modellist.copypasteinfo = copytab
+							//PrintTable(panel.modellist.copypasteinfo)
+
+							GAMEMODE:AddNotify("Copied " .. table.Count(copytab) .. " bones", NOTIFY_GENERIC, 2)
+							surface.PlaySound("ambient/water/drip" .. math.random(1, 4) .. ".wav")
 						end)
 						option:SetImage("icon16/page_copy.png")
 
@@ -1331,6 +1342,7 @@ if CLIENT then
 								panel.slider_scale_z:SetValue(selectedentry.scale.z)
 							end
 
+							GAMEMODE:AddNotify("Pasted " .. table.Count(serverinfo) .. " bones", NOTIFY_GENERIC, 2)
 							surface.PlaySound("common/wpn_select.wav")
 						end)
 						option:SetImage("icon16/page_paste.png")
@@ -1781,7 +1793,7 @@ if CLIENT then
 					hasoriginmanip = true
 				end
 
-				for id = 0, ent:GetBoneCount() do
+				for id = 0, ent:GetBoneCount() - 1 do
 					local name = ent:GetBoneName(id)
 					if name != "__INVALIDBONE__" then
 						AddBone(name, id, !hasoriginmanip and id == 0) //If we don't have a model origin control, then select bone 0 by default instead; TODO: what if bone 0 is invalid somehow?
@@ -1969,7 +1981,7 @@ if CLIENT then
 
 			if IsValid(parent) and parent:GetBoneCount() and parent:GetBoneCount() != 0 then
 
-				for id = 0, parent:GetBoneCount() do
+				for id = 0, parent:GetBoneCount() - 1 do
 					if parent:GetBoneName(id) != "__INVALIDBONE__" then
 						panel.targetbonelist:AddChoice(parent:GetBoneName(id), id, (selectedtargetbone == id))
 					end
