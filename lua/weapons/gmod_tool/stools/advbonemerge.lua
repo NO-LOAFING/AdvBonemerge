@@ -375,8 +375,8 @@ end
 if CLIENT then
 	//If we received a new entity, then add it to the controlpanel's list
 	net.Receive("AdvBone_NewModelToCPanel_SendToCl", function()
-		local panel = controlpanel.Get( "advbonemerge" )
-		if !panel or !panel.modellist or !panel.ToolgunObj then return end
+		local panel = controlpanel.Get("advbonemerge")
+		if !panel or !panel.modellist then return end
 
 		local ent = net.ReadEntity()
 		if !IsValid(ent) then return end
@@ -428,10 +428,6 @@ function TOOL:Think()
 		local panel = controlpanel.Get("advbonemerge")
 		if !panel or !panel.modellist then return end
 
-
-		//Store a reference to our toolgun in the panel table so it can change our NWvars
-		if !panel.ToolgunObj or panel.ToolgunObj != self:GetWeapon() then panel.ToolgunObj = self:GetWeapon() end
-
 		//Update the modellist in the controlpanel if CurEntity has changed
 		panel.CurEntity = panel.CurEntity or NULL
 		if panel.CurEntity != ent:EntIndex() then
@@ -460,43 +456,45 @@ end
 
 function TOOL:DrawHUD()
 
+	local panel = controlpanel.Get("advbonemerge")
+	if !panel or !panel.bonelist then return end
 	local ent = self:GetWeapon():GetNWEntity("AdvBone_CurEntity")
-	local bonemanipent = self:GetWeapon():GetNWEntity("AdvBone_BoneManipEntity")
+	local bonemanipent = panel.modellist.selectedent
 
 	if IsValid(ent) then
 		//Draw a halo around the entity we're manipulating the bones of
 		if self:GetClientNumber("drawhalo") == 1 then
-			local animcolor = 189 + math.cos( RealTime() * 4 ) * 17
+			local animcolor = 189 + math.cos(RealTime() * 4) * 17
 
 			if ent.AttachedEntity then ent = ent.AttachedEntity end
 
 			if IsValid(bonemanipent) and ent != bonemanipent then
-				halo.Add( {bonemanipent}, Color(animcolor, 255, animcolor, 255), 2.3, 2.3, 1, true, false )
+				halo.Add({bonemanipent}, Color(animcolor, 255, animcolor, 255), 2.3, 2.3, 1, true, false)
 			else
-				halo.Add( {ent}, Color(255, 255, animcolor, 255), 2.3, 2.3, 1, true, false )
+				halo.Add({ent}, Color(255, 255, animcolor, 255), 2.3, 2.3, 1, true, false)
 			end
 		end
 
-		//Draw the name and position of the selected bone
-		local bone = self:GetWeapon():GetNWInt("AdvBone_BoneManipIndex")
-		if IsValid(bonemanipent) and bone and bone > -2 then
+		//Draw the name and position of the selected bones
+		if !IsValid(bonemanipent) then return end
+		for _, line in pairs (panel.bonelist:GetSelected()) do
 			local _pos = nil
 			local _name = ""
 
-			if bone == -1 then
+			if line.id == -1 then
 				_pos = bonemanipent:GetPos()
 				_name = "(origin)"
 			else
-				local matr = bonemanipent:GetBoneMatrix(bone)
+				local matr = bonemanipent:GetBoneMatrix(line.id)
 				if matr then 
 					_pos = matr:GetTranslation() 
 				else
-					_pos = bonemanipent:GetBonePosition(bone) 
+					_pos = bonemanipent:GetBonePosition(line.id) 
 				end
-				_name = bonemanipent:GetBoneName(bone)
+				_name = bonemanipent:GetBoneName(line.id)
 			end
 
-			if !_pos then return end
+			if !_pos then continue end
 			local _pos = _pos:ToScreen()
 			local textpos = {x = _pos.x+5,y = _pos.y-5}
 
@@ -682,52 +680,84 @@ if SERVER then
 
 	//AdvBone_ToolBoneManip_SendToSv structure:
 	//	Entity: Selected entity
-	//	Int(9): Bone index
-	//	Entity: Toolgun entity
-	//	Bool: Update nwvars only? (if true, all further values aren't used)
+	//	Int(9): Number of bones to edit
+	//	FOR EACH ENTRY:
+	//		Int(9): Bone index
 	//
-	//	Int(9): Target bone index
-	//	Bool: Follow target bone scale
-	//
-	//	Vector: ManipulateBonePosition value
-	//	Angle: ManipulateBoneAngles value
-	//	Vector: ManipulateBoneScale value
+	//	UInt(4): Manip type index
+	//	FOR BONEINFO TARGET BONE:
+	//		Int(9): Target bone index
+	//		Bool: Do demo fix
+	//	FOR BONEINFO SCALE:
+	//		Bool: Follow target bone scale
+	//		Bool: Do demo fix
+	//	FOR POS/ANG/SCALE MANIP:
+	//		Float: New value for axis
 
 	util.AddNetworkString("AdvBone_ToolBoneManip_SendToSv")
 
-	//If we received a bonemanip from the client (for one specific bone, sent by using the bonemanip controls), then apply it to the entity's bone and update the NWvars
+	//If we received a bonemanip from the client (sent by using the bonemanip controls), then apply it to the entity's bone(s) and update the NWvars
 	net.Receive("AdvBone_ToolBoneManip_SendToSv", function(_, ply)
 		local ent = net.ReadEntity()
-		local entbone = net.ReadInt(9)
+		local boneids_read = {}
+		for i = 1, net.ReadInt(9) do
+			boneids_read[i] = net.ReadInt(9)
+		end
+		local which = net.ReadUInt(4)
 
-		//Set some NWVars on the toolgun so that the DrawHUD function can show the ent and entbone
-		local toolgun = net.ReadEntity()
-		toolgun:SetNWEntity("AdvBone_BoneManipEntity",ent)
-		toolgun:SetNWInt("AdvBone_BoneManipIndex",entbone)
+		local val, demofix
+		if which == 0 then //boneinfo target bone
+			val = net.ReadInt(9)
+			demofix = net.ReadBool()
+		elseif which == 1 then //boneinfo scale
+			val = net.ReadBool()
+			demofix = net.ReadBool()
+		else //pos/ang/scale axis slider
+			val = net.ReadFloat()
+		end
 
-		if !net:ReadBool() and IsValid(ent) and entbone != -2 then
-			local newtargetbone = net.ReadInt(9)
-			local newscaletarget = net.ReadBool()
+		//MsgN("received ToolBoneManip, which = ", which, ", val = ", val, ", ent = ", ent)
+		//PrintTable(boneids_read)
 
-			local newpos = net.ReadVector()
-			local newang = net.ReadAngle()
-			local newscl = net.ReadVector()
-
-			local demofix = net.ReadBool()
-
-			if ent.AdvBone_BoneInfo and ent.AdvBone_BoneInfo[entbone] then
-				if newtargetbone != -1 and ent:GetParent() != NULL then
-					if ent:GetParent().AttachedEntity then
-						ent.AdvBone_BoneInfo[entbone].parent = ent:GetParent().AttachedEntity:GetBoneName(newtargetbone)
-					else
-						ent.AdvBone_BoneInfo[entbone].parent = ent:GetParent():GetBoneName(newtargetbone)
+		if IsValid(ent) and #boneids_read > 0 then
+			local did_boneinfo = false
+			for k, entbone in pairs (boneids_read) do
+				if which == 0 then //boneinfo target bone
+					if ent.AdvBone_BoneInfo and ent.AdvBone_BoneInfo[entbone] and val != -2 then
+						if val != -1 and IsValid(ent:GetParent()) then
+							if ent:GetParent().AttachedEntity then
+								ent.AdvBone_BoneInfo[entbone].parent = ent:GetParent().AttachedEntity:GetBoneName(val)
+							else
+								ent.AdvBone_BoneInfo[entbone].parent = ent:GetParent():GetBoneName(val)
+							end
+						else
+							ent.AdvBone_BoneInfo[entbone].parent = ""
+						end
+						did_boneinfo = true
 					end
-				else
-					ent.AdvBone_BoneInfo[entbone].parent = ""
+				elseif which == 1 then //boneinfo scale
+					if ent.AdvBone_BoneInfo and ent.AdvBone_BoneInfo[entbone] then
+						ent.AdvBone_BoneInfo[entbone].scale = val
+						did_boneinfo = true
+					end
+				elseif which == 2 or which == 3 or which == 4 then //pos axis slider
+					local pos = ent:GetManipulateBonePosition(entbone)
+					pos[which-1] = val
+					ent:ManipulateBonePosition(entbone, pos)
+				elseif which == 5 or which == 6 or which == 7 then //ang axis slider
+					local ang = ent:GetManipulateBoneAngles(entbone)
+					ang[which-4] = val
+					ent:ManipulateBoneAngles(entbone, ang)
+				elseif which == 8 or which == 9 or which == 10 then //scale axis slider
+					local scale = ent:GetManipulateBoneScale(entbone)
+					scale[which-7] = val
+					ent:ManipulateBoneScale(entbone, scale)
+				else //scale xyz slider
+					ent:ManipulateBoneScale(entbone, Vector(val, val, val))
 				end
+			end
 
-				ent.AdvBone_BoneInfo[entbone].scale = newscaletarget
-
+			if did_boneinfo then
 				//Tell all the other clients that they need to update their BoneInfo tables to receive the changes (the original client already has the changes applied)
 				local filter = RecipientFilter()
 				filter:AddAllPlayers()
@@ -736,19 +766,15 @@ if SERVER then
 					net.WriteEntity(ent)
 				net.Send(filter)
 
-				//Wake up BuildBonePositions
-				AdvBone_ResetBoneChangeTime(ent)
-				AdvBone_ResetBoneChangeTimeOnChildren(ent, true)
+				//We've modified the boneinfo table, so it's not default - save it on unmerge
+				if IsValid(ent:GetParent()) then
+					ent.AdvBone_BoneInfo_IsDefault = false
+				end
 			end
 
-			ent:ManipulateBonePosition(entbone,newpos)
-			ent:ManipulateBoneAngles(entbone,newang)
-			ent:ManipulateBoneScale(entbone,newscl)
-
-			//We've modified the boneinfo table, so it's not default - save it on unmerge
-			if IsValid(ent:GetParent()) then
-				ent.AdvBone_BoneInfo_IsDefault = false
-			end
+			//Wake up BuildBonePositions
+			AdvBone_ResetBoneChangeTime(ent)
+			AdvBone_ResetBoneChangeTimeOnChildren(ent, true)
 		end
 	end)
 
@@ -756,7 +782,7 @@ if SERVER then
 
 	//AdvBone_CPanelInput_SendToSv structure:
 	//	Entity: Target entity
-	//	Int(4): Input id
+	//	UInt(4): Input index
 
 	util.AddNetworkString("AdvBone_CPanelInput_SendToSv")
 
@@ -992,6 +1018,7 @@ if SERVER then
 
 
 	util.AddNetworkString("AdvBone_EntBoneInfoTableUpdate_SendToCl")
+
 end
 
 if CLIENT then
@@ -1007,58 +1034,79 @@ if CLIENT then
 
 
 
-	local function SendBoneManipToServer()
+	local function SendBoneManipToServer(which)
 
 		local panel = controlpanel.Get("advbonemerge")
-		if !panel or !panel.modellist then return end
-		if !panel.ToolgunObj then return end
-
+		if !panel or !panel.modellist or !which then return end
 
 		local ent = panel.modellist.selectedent
-		local entbone = panel.bonelist.selectedbone
+		local boneids = panel.bonelist:GetSelected()
 
-		local newtargetbone = panel.targetbonelist.selectedtargetbone
-		local newscaletarget = panel.checkbox_scaletarget:GetChecked()
+		local whichtab = {
+			[panel.targetbonelist] = 0,
+			[panel.checkbox_scaletarget] = 1,
+			[panel.slider_trans_x] = 2,
+			[panel.slider_trans_y] = 3,
+			[panel.slider_trans_z] = 4,
+			[panel.slider_rot_p] = 5,
+			[panel.slider_rot_y] = 6,
+			[panel.slider_rot_r] = 7,
+			[panel.slider_scale_x] = 8,
+			[panel.slider_scale_y] = 9,
+			[panel.slider_scale_z] = 10,
+			[panel.slider_scale_xyz] = 11
+		}
+		if whichtab[which] == nil then return end
+		//MsgN("SendBoneManipToServer: which = ", whichtab[which], "; ", panel.UpdatingBoneManipOptions, " ", #boneids == 0, " ", !IsValid(ent))
 
-		local newtrans = Vector( panel.slider_trans_x:GetValue(), panel.slider_trans_y:GetValue(), panel.slider_trans_z:GetValue() )
-		local newrot = Angle( panel.slider_rot_p:GetValue(), panel.slider_rot_y:GetValue(), panel.slider_rot_r:GetValue() )
-		local newscale = Vector( panel.slider_scale_x:GetValue(), panel.slider_scale_y:GetValue(), panel.slider_scale_z:GetValue() )
+		if panel.UpdatingBoneManipOptions or #boneids == 0 or !IsValid(ent) then return end
 
-
-		//First, apply the new BoneInfo clientside
-		if !panel.UpdatingBoneManipOptions and ent != NULL and entbone != -2 then
-			if ent.AdvBone_BoneInfo and ent.AdvBone_BoneInfo[entbone] then
-				if newtargetbone != -1 and ent:GetParent() != NULL then
-					if ent:GetParent().AttachedEntity then
-						ent.AdvBone_BoneInfo[entbone].parent = ent:GetParent().AttachedEntity:GetBoneName(newtargetbone)
-					else
-						ent.AdvBone_BoneInfo[entbone].parent = ent:GetParent():GetBoneName(newtargetbone)
-					end
-				else
-					ent.AdvBone_BoneInfo[entbone].parent = ""
-				end
-
-				ent.AdvBone_BoneInfo[entbone].scale = newscaletarget
-			end
-		end
-
-
-		//Then, send all of the information to the server so the duplicator can pick it up
+		//Send all of the information to the server so the duplicator can pick it up
 		net.Start("AdvBone_ToolBoneManip_SendToSv")
 			net.WriteEntity(ent)
-			net.WriteInt(entbone, 9)
-			net.WriteEntity(panel.ToolgunObj)
-			net.WriteBool(panel.UpdatingBoneManipOptions)
+			net.WriteInt(#boneids, 9)
+			for k, line in pairs (boneids) do
+				net.WriteInt(line.id, 9)
+			end
+			net.WriteUInt(whichtab[which], 4)
 
-			if !panel.UpdatingBoneManipOptions then
+			if which == panel.targetbonelist then
+				local newtargetbone = panel.targetbonelist.selectedtargetbone
+				//First, apply the new BoneInfo clientside
+				if ent.AdvBone_BoneInfo and newtargetbone != -2 then
+					for k, line in pairs (boneids) do
+						if ent.AdvBone_BoneInfo[line.id] then
+							if newtargetbone != -1 and IsValid(ent:GetParent()) then
+								if ent:GetParent().AttachedEntity then
+									ent.AdvBone_BoneInfo[line.id].parent = ent:GetParent().AttachedEntity:GetBoneName(newtargetbone)
+								else
+									ent.AdvBone_BoneInfo[line.id].parent = ent:GetParent():GetBoneName(newtargetbone)
+								end
+							else
+								ent.AdvBone_BoneInfo[line.id].parent = ""
+							end
+						end
+					end
+				end
+				//Then send the new value to the server
 				net.WriteInt(newtargetbone, 9)
-				net.WriteBool(newscaletarget)
-
-				net.WriteVector(newtrans)
-				net.WriteAngle(newrot)
-				net.WriteVector(newscale)
-
 				net.WriteBool(engine.IsRecordingDemo())
+			elseif which == panel.checkbox_scaletarget then
+				local newscaletarget = panel.checkbox_scaletarget:GetChecked()
+				//First, apply the new BoneInfo clientside
+				if ent.AdvBone_BoneInfo then
+					for k, line in pairs (boneids) do
+						if ent.AdvBone_BoneInfo[line.id] then
+							ent.AdvBone_BoneInfo[line.id].scale = newscaletarget
+						end
+					end
+				end
+				//Then send the new value to the server
+				net.WriteBool(newscaletarget)
+				net.WriteBool(engine.IsRecordingDemo())
+			else
+				//The rest are all bonemanip sliders, just send the new value to the server
+				net.WriteFloat(which:GetValue())
 			end
 		net.SendToServer()
 
@@ -1171,7 +1219,7 @@ if CLIENT then
 					//Left Click: Select the model and update the bone list
 					node.DoClick = function()
 						panel.modellist.selectedent = modelent
-						panel.bonelist.PopulateBoneList(modelent)
+						panel.bonelist.PopulateBoneList() //selected ent has changed, update bone list
 					end
 
 					//Right Click: Show a dropdown menu with copy/paste and unmerge options
@@ -1268,7 +1316,6 @@ if CLIENT then
 						local option = menu:AddOption("Paste bone settings", function()
 							if !panel.modellist.copypasteinfo then return end
 							local serverinfo = {}
-							local selectedentry = nil
 							local parent = modelent:GetParent()
 
 							for bonename, entry in pairs (panel.modellist.copypasteinfo) do
@@ -1284,62 +1331,50 @@ if CLIENT then
 										}
 									end
 
+									//Update visuals of list entries to show their new status
+									if modelent == panel.modellist.selectedent then
+										local targetboneid = -1
+										if entry.targetbone != "" and IsValid(parent) then targetboneid = parent:LookupBone(entry.targetbone) end
+										panel.bonelist.Bones[id].HasTargetBone = targetboneid != -1
+									end
+
+									//Apply the manips clientside too, so that UpdateBoneManipOptions can get their values immediately
+									modelent:ManipulateBonePosition(id, entry.trans)
+									modelent:ManipulateBoneAngles(id, entry.rot)
+									modelent:ManipulateBoneScale(id, entry.scale)
+
 									//Then, compile information to be sent to the server for this bone
 									local serverentry = table.Copy(entry)
 									serverentry.id = id
 									table.insert(serverinfo,serverentry)
-
-									if modelent == panel.modellist.selectedent then
-										//If the paste modified the currently selected bone, then catch that for later in the function
-										if id == panel.bonelist.selectedbone then selectedentry = table.Copy(serverentry) end
-
-										//Update visuals of list entry for this bone
-										if panel.bonelist.Bones[id] then
-											local targetboneid = -1
-											if entry.targetbone != "" and IsValid(parent) then targetboneid = parent:LookupBone(entry.targetbone) end
-											panel.bonelist.Bones[id].HasTargetBone = targetboneid != -1
-										end
-									end
 								end
 							end
 
-							if table.Count(serverinfo) == 0 then return end  //if none of the bones match then this will still be empty
+							if table.Count(serverinfo) > 0 then //if none of the bones match then this will still be empty
+								//Then, send all of the information to the server so the duplicator can pick it up	
+								net.Start("AdvBone_BoneManipPaste_SendToSv")
+									net.WriteEntity(modelent)
 
-							//Then, send all of the information to the server so the duplicator can pick it up	
- 							net.Start("AdvBone_BoneManipPaste_SendToSv")
-								net.WriteEntity(modelent)
+									net.WriteBool(engine.IsRecordingDemo())
 
-								net.WriteBool(engine.IsRecordingDemo())
+									net.WriteInt(table.Count(serverinfo), 9)
+									for _, entry in pairs (serverinfo) do
+										net.WriteInt(entry.id, 9)
 
-								net.WriteInt(table.Count(serverinfo), 9)
-								for _, entry in pairs (serverinfo) do
-									net.WriteInt(entry.id, 9)
+										net.WriteString(entry.targetbone)
+										net.WriteBool(entry.scaletarget)
+											
+										net.WriteVector(entry.trans)
+										net.WriteAngle(entry.rot)
+										net.WriteVector(entry.scale)
+									end
+								net.SendToServer()
 
-									net.WriteString(entry.targetbone)
-									net.WriteBool(entry.scaletarget)
-										
-									net.WriteVector(entry.trans)
-									net.WriteAngle(entry.rot)
-									net.WriteVector(entry.scale)
+								//If the paste modified the bones of the currently selected entity, then update 
+								//all of the bonemanip controls to make sure they don't display out-of-date values
+								if modelent == panel.modellist.selectedent then
+									panel.UpdateBoneManipOptions()
 								end
-							net.SendToServer()
-
-							//If the paste modified the currently selected bone, then change the bonemanip options to match the new values
-							//so their OnValueChanged functions don't change the values back
-							if selectedentry != nil then
-								panel.targetbonelist.PopulateTargetBoneList(panel.modellist.selectedent,panel.bonelist.selectedbone)
-								panel.checkbox_scaletarget:SetChecked(selectedentry.scaletarget)
-
-								panel.slider_trans_x:SetValue(selectedentry.trans.x)
-								panel.slider_trans_y:SetValue(selectedentry.trans.y)
-								panel.slider_trans_z:SetValue(selectedentry.trans.z)
-								panel.slider_rot_p:SetValue(selectedentry.rot.p)
-								panel.slider_rot_y:SetValue(selectedentry.rot.y)
-								panel.slider_rot_r:SetValue(selectedentry.rot.r)
-								panel.slider_scale_xyz:SetValue(selectedentry.scale.x)  //ehh
-								panel.slider_scale_x:SetValue(selectedentry.scale.x)
-								panel.slider_scale_y:SetValue(selectedentry.scale.y)
-								panel.slider_scale_z:SetValue(selectedentry.scale.z)
 							end
 
 							GAMEMODE:AddNotify("Pasted " .. table.Count(serverinfo) .. " bones", NOTIFY_GENERIC, 2)
@@ -1607,7 +1642,7 @@ if CLIENT then
 								panel.modellist.PopulateModelList(NULL)
 							elseif panel.modellist.selectedent == modelent then
 								panel.modellist.selectedent = NULL
-								panel.bonelist.PopulateBoneList(NULL)
+								panel.bonelist.PopulateBoneList() //selected ent has changed, update bone list
 							end
 							node:Remove()
 							//fix: if we delete the last child node of a node, then it'll error when it updates because it still expects to have a child,
@@ -1628,7 +1663,7 @@ if CLIENT then
 							//If the node's entity is an animated prop that's been unmerged, deselect and remove the node
 							if panel.modellist.selectedent == modelent then
 								panel.modellist.selectedent = NULL
-								panel.bonelist.PopulateBoneList(NULL)
+								panel.bonelist.PopulateBoneList() //selected ent has changed, update bone list
 							end
 							node:Remove()
 							//fix: if we delete the last child node of a node, then it'll error when it updates because it still expects to have a child,
@@ -1692,7 +1727,7 @@ if CLIENT then
 
 			//Deselect the currently selected model - remove its bones from the bone list since it's not selected any more
 			panel.modellist.selectedent = NULL
-			panel.bonelist.PopulateBoneList(NULL)
+			panel.bonelist.PopulateBoneList() //selected ent has changed, update bone list
 
 			if IsValid(ent) then
 				panel.modellist.AddModelNodes(ent, panel.modellist)
@@ -1718,12 +1753,14 @@ if CLIENT then
 		})
 
 		panel.bonelist.Bones = {}
-		panel.bonelist.selectedbone = -2
-		panel.bonelist.PopulateBoneList = function(ent)
+		panel.bonelist:SetMultiSelect(true)
+		panel.bonelist.PopulateBoneList = function()
+
+			local ent = panel.modellist.selectedent
 
 			panel.bonelist:Clear()
-			panel.bonelist.selectedbone = -2
-			panel.UpdateBoneManipOptions(ent,-2)
+			panel.bonelist:ClearSelection() //TODO: is this unnecessary?
+			panel.UpdateBoneManipOptions()
 
 			if IsValid(ent) and ent:GetBoneCount() and ent:GetBoneCount() != 0 then
 
@@ -1735,6 +1772,7 @@ if CLIENT then
 				local function AddBone(name, id, select)
 					local line = panel.bonelist:AddLine(name)
 					panel.bonelist.Bones[id] = line
+					line.id = id
 
 					local selectedtargetbone = -1
 					if ent.AdvBone_BoneInfo and ent.AdvBone_BoneInfo[id] then
@@ -1744,8 +1782,7 @@ if CLIENT then
 					if selectedtargetbone != -1 then line.HasTargetBone = true end
 
 					line.OnSelect = function()
-						panel.bonelist.selectedbone = id
-						panel.UpdateBoneManipOptions(ent,id)
+						panel.UpdateBoneManipOptions()
 					end
 
 					if select then
@@ -1819,28 +1856,40 @@ if CLIENT then
 		panel.bonemanipcontainer.Header:SetTall(0)
 		panel:AddPanel(panel.bonemanipcontainer)
 
-
 		panel.UpdatingBoneManipOptions = false
-		panel.UpdateBoneManipOptions = function(ent,boneid)
+		panel.UpdateBoneManipOptions = function()
 			//Don't let the options accidentally update anything while we're changing their values like this
 			panel.UpdatingBoneManipOptions = true
 
+			local ent = panel.modellist.selectedent
+			local boneids = panel.bonelist:GetSelected()
 
-			//hide all the bonemanip options if we're not using them
-			if ent != NULL and boneid != -2 then
-				//expand it
-				if panel.bonemanipcontainer:GetExpanded() == false then panel.bonemanipcontainer:Toggle() end
-			else
-				//contract it
+			if !IsValid(ent) or #boneids == 0 then
+				//hide all the bonemanip options if we're not using them
 				if panel.bonemanipcontainer:GetExpanded() == true then panel.bonemanipcontainer:Toggle() end
 				panel.bonemanipcontainer:GetParent():SetTall(panel.bonemanipcontainer:GetTall())
-			end
+			else
+				//unhide all the bonemanip options if they're hidden
+				if panel.bonemanipcontainer:GetExpanded() == false then panel.bonemanipcontainer:Toggle() end
 
-
-			if ent != NULL and boneid != -2 then
-				local trans = ent:GetManipulateBonePosition(boneid)
-				local rot = ent:GetManipulateBoneAngles(boneid)
-				local scale = ent:GetManipulateBoneScale(boneid)
+				local trans, rot, scale, trans_conflict_x, trans_conflict_y, trans_conflict_z, rot_conflict_p, rot_conflict_y, rot_conflict_r, scale_conflict_x, scale_conflict_y, scale_conflict_z
+				for k, line in pairs (boneids) do					
+					local this_trans = ent:GetManipulateBonePosition(line.id)
+					local this_rot = ent:GetManipulateBoneAngles(line.id)
+					local this_scale = ent:GetManipulateBoneScale(line.id)
+					trans = trans or this_trans
+					rot = rot or this_rot
+					scale = scale or this_scale
+					if trans.x != this_trans.x then trans_conflict_x = true end
+					if trans.y != this_trans.y then trans_conflict_y = true end
+					if trans.z != this_trans.z then trans_conflict_z = true end
+					if rot.p != this_rot.p then rot_conflict_p = true end
+					if rot.y != this_rot.y then rot_conflict_y = true end
+					if rot.r != this_rot.r then rot_conflict_r = true end
+					if scale.x != this_scale.x then scale_conflict_x = true end
+					if scale.y != this_scale.y then scale_conflict_y = true end
+					if scale.z != this_scale.z then scale_conflict_z = true end
+				end
 
 				//if the keyboard focus is on a slider's text field when we update the slider's value, then the text value won't update correctly,
 				//so make sure to take the focus off of the text fields first
@@ -1866,23 +1915,82 @@ if CLIENT then
 				panel.slider_scale_z:SetValue(scale.z)
 				panel.slider_scale_xyz:SetValue(scale.x)  //ehh
 
-				//taking the focus off of the text areas isn't enough, we also need to update their text manually because vgui.GetKeyboardFocus()
-				//erroneously tells them that they've still got focus and shouldn't be updating themselves
-				panel.slider_trans_x.TextArea:SetText( panel.slider_trans_x.Scratch:GetTextValue() )
-				panel.slider_trans_y.TextArea:SetText( panel.slider_trans_y.Scratch:GetTextValue() )
-				panel.slider_trans_z.TextArea:SetText( panel.slider_trans_z.Scratch:GetTextValue() )
-				panel.slider_rot_p.TextArea:SetText( panel.slider_rot_p.Scratch:GetTextValue() )
-				panel.slider_rot_y.TextArea:SetText( panel.slider_rot_y.Scratch:GetTextValue() )
-				panel.slider_rot_r.TextArea:SetText( panel.slider_rot_r.Scratch:GetTextValue() )
-				panel.slider_scale_x.TextArea:SetText( panel.slider_scale_x.Scratch:GetTextValue() )
-				panel.slider_scale_y.TextArea:SetText( panel.slider_scale_y.Scratch:GetTextValue() )
-				panel.slider_scale_z.TextArea:SetText( panel.slider_scale_z.Scratch:GetTextValue() )
-				panel.slider_scale_xyz.TextArea:SetText( panel.slider_scale_xyz.Scratch:GetTextValue() )
-
-				if ent.AdvBone_BoneInfo and ent.AdvBone_BoneInfo[boneid] then 
-					panel.checkbox_scaletarget:SetChecked(ent.AdvBone_BoneInfo[boneid].scale)
+				if !trans_conflict_x then
+					//taking the focus off of the text areas isn't enough, we also need to update their text manually because vgui.GetKeyboardFocus()
+					//erroneously tells them that they've still got focus and shouldn't be updating themselves
+					panel.slider_trans_x.TextArea:SetText(panel.slider_trans_x.Scratch:GetTextValue())
 				else
-					panel.checkbox_scaletarget:SetChecked(false)
+					//we've selected multiple bones with conflicting values, don't show any number until this changes
+					panel.slider_trans_x.TextArea:SetText("")
+				end
+				if !trans_conflict_y then
+					panel.slider_trans_y.TextArea:SetText(panel.slider_trans_y.Scratch:GetTextValue())
+				else
+					panel.slider_trans_y.TextArea:SetText("")
+				end
+				if !trans_conflict_z then
+					panel.slider_trans_z.TextArea:SetText(panel.slider_trans_z.Scratch:GetTextValue())
+				else
+					panel.slider_trans_z.TextArea:SetText("")
+				end
+
+				if !rot_conflict_p then
+					panel.slider_rot_p.TextArea:SetText(panel.slider_rot_p.Scratch:GetTextValue())
+				else
+					panel.slider_rot_p.TextArea:SetText("")
+				end
+				if !rot_conflict_y then
+					panel.slider_rot_y.TextArea:SetText(panel.slider_rot_y.Scratch:GetTextValue())
+				else
+					panel.slider_rot_y.TextArea:SetText("")
+				end
+				if !rot_conflict_r then
+					panel.slider_rot_r.TextArea:SetText(panel.slider_rot_r.Scratch:GetTextValue())
+				else
+					panel.slider_rot_r.TextArea:SetText("")
+				end
+
+				if !scale_conflict_x then
+					panel.slider_scale_x.TextArea:SetText(panel.slider_scale_x.Scratch:GetTextValue())
+				else
+					panel.slider_scale_x.TextArea:SetText("")
+				end
+				if !scale_conflict_y then
+					panel.slider_scale_y.TextArea:SetText(panel.slider_scale_y.Scratch:GetTextValue())
+				else
+					panel.slider_scale_y.TextArea:SetText("")
+				end
+				if !scale_conflict_z then
+					panel.slider_scale_z.TextArea:SetText(panel.slider_scale_z.Scratch:GetTextValue())
+				else
+					panel.slider_scale_z.TextArea:SetText("")
+				end
+
+				//be extra strict about this one, don't show a number for xyz unless all axes have same value
+				if !scale_conflict_x and !scale_conflict_y and !scale_conflict_z and scale.x == scale.y and scale.x == scale.z then
+					panel.slider_scale_xyz.TextArea:SetText( panel.slider_scale_xyz.Scratch:GetTextValue() )
+				else
+					panel.slider_scale_xyz.TextArea:SetText("")
+				end
+
+				local check
+				for k, line in pairs (boneids) do
+					local this_check
+					if ent.AdvBone_BoneInfo and ent.AdvBone_BoneInfo[line.id] then 
+						this_check = ent.AdvBone_BoneInfo[line.id].scale
+					else
+						this_check = false
+					end
+					if check == nil then
+						check = this_check
+						panel.checkbox_scaletarget.conflict = nil
+						panel.checkbox_scaletarget:SetChecked(check)
+					elseif this_check != check then
+						//we've selected multiple bones with conflicting values, change how we draw the checkbox
+						panel.checkbox_scaletarget.conflict = true
+						panel.checkbox_scaletarget:SetChecked(true)
+						break
+					end
 				end
 
 				//gray out the BoneInfo options if the ent can't use them
@@ -1931,11 +2039,9 @@ if CLIENT then
 					SetSliderDisabled(panel.slider_scale_z, false)
 					SetSliderDisabled(panel.slider_scale_xyz, false)
 				end
+
+				panel.targetbonelist.PopulateTargetBoneList()
 			end
-
-			panel.targetbonelist.PopulateTargetBoneList(ent,boneid)
-			SendBoneManipToServer()  //Make sure the NWvars update even if none of the sliders were changed
-
 
 			panel.UpdatingBoneManipOptions = false
 		end
@@ -1950,53 +2056,72 @@ if CLIENT then
 			panel.targetbonelist:Dock(TOP)
 		panel.bonemanipcontainer:AddItem(panel.targetbonelist_label, panel.targetbonelist)
 
-		panel.targetbonelist.selectedtargetbone = -1
-		panel.targetbonelist.PopulateTargetBoneList = function(ent,boneid)
+		panel.targetbonelist.selectedtargetbone = -2
+		panel.targetbonelist.PopulateTargetBoneList = function()
 
+			local ent = panel.modellist.selectedent
+			local boneids = panel.bonelist:GetSelected()
 			panel.targetbonelist:Clear()
 
-
-			if ent == NULL then return end
+			if !IsValid(ent) then return end
 			parent = ent:GetParent()
 			if parent.AttachedEntity then parent = parent.AttachedEntity end
 
-			local selectedtargetbone = -1
-			if ent.AdvBone_BoneInfo and ent.AdvBone_BoneInfo[boneid] then
-				local targetbonestr = ent.AdvBone_BoneInfo[boneid].parent
-				if targetbonestr != "" and IsValid(parent) then selectedtargetbone = parent:LookupBone(targetbonestr) end
+			local selectedtargetbone
+			for k, line in pairs (boneids) do
+				if ent.AdvBone_BoneInfo and ent.AdvBone_BoneInfo[line.id] then
+					local this_targetbone = ent.AdvBone_BoneInfo[line.id].parent
+					if this_targetbone != "" and IsValid(parent) then 
+						this_targetbone = parent:LookupBone(this_targetbone)
+					else
+						this_targetbone = -1
+					end
+					selectedtargetbone = selectedtargetbone or this_targetbone
+					if selectedtargetbone != this_targetbone then
+						selectedtargetbone = -2
+						break
+					end
+				end
 			end
+			selectedtargetbone = selectedtargetbone or -2
+			panel.targetbonelist.selectedtargetbone = selectedtargetbone
 
 			local nonetext = "(none)"
-			if boneid == -1 or (boneid == 0 and ent:GetBoneName(0) == "static_prop") then
-				if IsValid(parent) then nonetext = "(none, follow parent model's origin)" end
-			else
-				local parentboneid = ent:GetBoneParent(boneid)
-				if parentboneid and parentboneid != -1 then
-					nonetext = "(none, follow parent bone " .. ent:GetBoneName(parentboneid) .. ")"
-				else
-					nonetext = "(none, follow origin)"
+			if #boneids == 1 then
+				for k, line in pairs (boneids) do
+					if line.id == -1 or (line.id == 0 and ent:GetBoneName(0) == "static_prop") then
+						if IsValid(parent) then nonetext = "(none, follow parent model's origin)" end
+					else
+						local parentboneid = ent:GetBoneParent(line.id)
+						if parentboneid and parentboneid != -1 then
+							nonetext = "(none, follow parent bone " .. ent:GetBoneName(parentboneid) .. ")"
+						else
+							nonetext = "(none, follow origin)"
+						end
+					end
+					break
 				end
 			end
 			panel.targetbonelist:AddChoice(nonetext, -1, (selectedtargetbone == -1))
 
 			if IsValid(parent) and parent:GetBoneCount() and parent:GetBoneCount() != 0 then
-
 				for id = 0, parent:GetBoneCount() - 1 do
 					if parent:GetBoneName(id) != "__INVALIDBONE__" then
 						panel.targetbonelist:AddChoice(parent:GetBoneName(id), id, (selectedtargetbone == id))
 					end
 				end
-
 			end
 
 		end
 		panel.targetbonelist.OnSelect = function(_,_,value,data)
 			panel.targetbonelist.selectedtargetbone = data
-			SendBoneManipToServer()
+			SendBoneManipToServer(panel.targetbonelist)
 
-			//Update visuals of list entry for this bone
-			if panel.bonelist.Bones[panel.bonelist.selectedbone] then
-				panel.bonelist.Bones[panel.bonelist.selectedbone].HasTargetBone = data != -1
+			//Update visuals of list entries to show their new status
+			for k, line in pairs (panel.bonelist:GetSelected()) do
+				if panel.bonelist.Bones[line.id] then
+					panel.bonelist.Bones[line.id].HasTargetBone = data != -1
+				end
 			end
 		end
 
@@ -2065,7 +2190,7 @@ if CLIENT then
 		local slider = panel.bonemanipcontainer:NumSlider("Move X", nil, -128, 128, 2)
 		slider.ValueChanged = SliderValueChangedUnclamped
 		slider.SetValue = SliderSetValueUnclamped
-		slider.OnValueChanged = function() SendBoneManipToServer() end
+		slider.OnValueChanged = function() MsgN("ran OnValueChanged") SendBoneManipToServer(panel.slider_trans_x) end
 		slider:SetHeight(9)
 		slider:SetDefaultValue(0.00)
 		panel.slider_trans_x = slider
@@ -2073,7 +2198,7 @@ if CLIENT then
 		local slider = panel.bonemanipcontainer:NumSlider("Move Y", nil, -128, 128, 2)
 		slider.ValueChanged = SliderValueChangedUnclamped
 		slider.SetValue = SliderSetValueUnclamped
-		slider.OnValueChanged = function() SendBoneManipToServer() end
+		slider.OnValueChanged = function() SendBoneManipToServer(panel.slider_trans_y) end
 		slider:SetHeight(9)
 		slider:SetDefaultValue(0.00)
 		panel.slider_trans_y = slider
@@ -2081,7 +2206,7 @@ if CLIENT then
 		local slider = panel.bonemanipcontainer:NumSlider("Move Z", nil, -128, 128, 2)
 		slider.ValueChanged = SliderValueChangedUnclamped
 		slider.SetValue = SliderSetValueUnclamped
-		slider.OnValueChanged = function() SendBoneManipToServer() end
+		slider.OnValueChanged = function() SendBoneManipToServer(panel.slider_trans_z) end
 		slider:SetHeight(9)
 		slider:SetDefaultValue(0.00)
 		panel.slider_trans_z = slider
@@ -2092,19 +2217,19 @@ if CLIENT then
 
 		//Rotation
 		local slider = panel.bonemanipcontainer:NumSlider("Pitch", nil, -180, 180, 2)
-		slider.OnValueChanged = function() SendBoneManipToServer() end
+		slider.OnValueChanged = function() SendBoneManipToServer(panel.slider_rot_p) end
 		slider:SetHeight(9)
 		slider:SetDefaultValue(0.00)
 		panel.slider_rot_p = slider
 
 		local slider = panel.bonemanipcontainer:NumSlider("Yaw", nil, -180, 180, 2)
-		slider.OnValueChanged = function() SendBoneManipToServer() end
+		slider.OnValueChanged = function() SendBoneManipToServer(panel.slider_rot_y) end
 		slider:SetHeight(9)
 		slider:SetDefaultValue(0.00)
 		panel.slider_rot_y = slider
 
 		local slider = panel.bonemanipcontainer:NumSlider("Roll", nil, -180, 180, 2)
-		slider.OnValueChanged = function() SendBoneManipToServer() end
+		slider.OnValueChanged = function() SendBoneManipToServer(panel.slider_rot_r) end
 		slider:SetHeight(9)
 		slider:SetDefaultValue(0.00)
 		panel.slider_rot_r = slider
@@ -2117,7 +2242,7 @@ if CLIENT then
 		local slider = panel.bonemanipcontainer:NumSlider("Scale X", nil, 0, 20, 2)
 		slider.ValueChanged = SliderValueChangedUnclamped
 		slider.SetValue = SliderSetValueUnclamped
-		slider.OnValueChanged = function() SendBoneManipToServer() end
+		slider.OnValueChanged = function() SendBoneManipToServer(panel.slider_scale_x) end
 		slider:SetHeight(9)
 		slider:SetDefaultValue(1.00)
 		panel.slider_scale_x = slider
@@ -2125,7 +2250,7 @@ if CLIENT then
 		local slider = panel.bonemanipcontainer:NumSlider("Scale Y", nil, 0, 20, 2)
 		slider.ValueChanged = SliderValueChangedUnclamped
 		slider.SetValue = SliderSetValueUnclamped
-		slider.OnValueChanged = function() SendBoneManipToServer() end
+		slider.OnValueChanged = function() SendBoneManipToServer(panel.slider_scale_y) end
 		slider:SetHeight(9)
 		slider:SetDefaultValue(1.00)
 		panel.slider_scale_y = slider
@@ -2133,7 +2258,7 @@ if CLIENT then
 		local slider = panel.bonemanipcontainer:NumSlider("Scale Z", nil, 0, 20, 2)
 		slider.ValueChanged = SliderValueChangedUnclamped
 		slider.SetValue = SliderSetValueUnclamped
-		slider.OnValueChanged = function() SendBoneManipToServer() end
+		slider.OnValueChanged = function() SendBoneManipToServer(panel.slider_scale_z) end
 		slider:SetHeight(9)
 		slider:SetDefaultValue(1.00)
 		panel.slider_scale_z = slider
@@ -2147,7 +2272,7 @@ if CLIENT then
 			panel.slider_scale_x:SetValue(val)
 			panel.slider_scale_y:SetValue(val)
 			panel.slider_scale_z:SetValue(val)
-			SendBoneManipToServer() 
+			SendBoneManipToServer(panel.slider_scale_xyz) 
 		end
 		slider:SetHeight(9)
 		slider:SetDefaultValue(1.00)
@@ -2155,9 +2280,25 @@ if CLIENT then
 
 		local checkbox = panel.bonemanipcontainer:CheckBox("Scale with target bone", nil)
 		checkbox:SetHeight(15)
-		checkbox.OnChange = function() SendBoneManipToServer() end
+		checkbox.OnChange = function()
+			checkbox.conflict = nil
+			SendBoneManipToServer(panel.checkbox_scaletarget) 
+		end
 		panel.checkbox_scaletarget = checkbox
-
+		local old_Paint = checkbox.Button.Paint
+		function checkbox.Button:Paint(w, h)
+			old_Paint(self, w, h)
+			//If multiple bones are selected that have conflicting values, then 
+			//draw the box with a faded-out check to show the indeterminate state
+			if checkbox.conflict then
+				local alpha = surface.GetAlphaMultiplier()
+				surface.SetAlphaMultiplier(0.5)
+				checkbox:SetChecked(false)
+				old_Paint(self, w, h)
+				checkbox:SetChecked(true)
+				surface.SetAlphaMultiplier(alpha)
+			end
+		end
 
 		panel.bonemanipcontainer:Toggle()  //bonemanip options should be hidden by default since no entity is selected
 

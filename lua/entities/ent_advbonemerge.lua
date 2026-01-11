@@ -1538,7 +1538,7 @@ local old_GetManipulateBonePosition = meta.GetManipulateBonePosition
 if old_GetManipulateBonePosition then
 	function meta.GetManipulateBonePosition(ent, boneID, ...)
 		if isentity(ent) and IsValid(ent) and ent.AdvBone_BoneManips and ent.AdvBone_BoneManips[boneID] and ent.AdvBone_BoneManips[boneID].p then
-			return ent.AdvBone_BoneManips[boneID].p
+			return Vector(ent.AdvBone_BoneManips[boneID].p)
 		else
 			return old_GetManipulateBonePosition(ent, boneID, ...)
 		end
@@ -1595,7 +1595,7 @@ local old_GetManipulateBoneAngles = meta.GetManipulateBoneAngles
 if old_GetManipulateBoneAngles then
 	function meta.GetManipulateBoneAngles(ent, boneID, ...)
 		if isentity(ent) and IsValid(ent) and ent.AdvBone_BoneManips and ent.AdvBone_BoneManips[boneID] and ent.AdvBone_BoneManips[boneID].a then
-			return ent.AdvBone_BoneManips[boneID].a
+			return Angle(ent.AdvBone_BoneManips[boneID].a)
 		else
 			return old_GetManipulateBoneAngles(ent, boneID, ...)
 		end
@@ -1651,7 +1651,7 @@ local old_GetManipulateBoneScale = meta.GetManipulateBoneScale
 if old_GetManipulateBoneScale then
 	function meta.GetManipulateBoneScale(ent, boneID, ...)
 		if isentity(ent) and IsValid(ent) and ent.AdvBone_BoneManips and ent.AdvBone_BoneManips[boneID] and ent.AdvBone_BoneManips[boneID].s then
-			return ent.AdvBone_BoneManips[boneID].s
+			return Vector(ent.AdvBone_BoneManips[boneID].s)
 		else
 			return old_GetManipulateBoneScale(ent, boneID, ...)
 		end
