@@ -952,6 +952,8 @@ if SERVER then
 	//AdvBone_BoneManipPaste_SendToSv structure:
 	//	Entity: Entity to modify
 	//
+	//	Bool: Do demo fix
+	//
 	//	Int(9): Number of bonemanip entries
 	//	FOR EACH ENTRY:
 	//		Int(9): Bone index for this entry
@@ -959,9 +961,17 @@ if SERVER then
 	//		String: Target bone name
 	//		Bool: Follow target bone scale
 	//
-	//		Vector: ManipulateBonePosition value
-	//		Angle: ManipulateBoneAngles value
-	//		Vector: ManipulateBoneScale value
+	//		Float: ManipulateBonePosition x value
+	//		Float: ManipulateBonePosition y value
+	//		Float: ManipulateBonePosition z value
+	//
+	//		Float: ManipulateBoneAngles p value
+	//		Float: ManipulateBoneAngles y value
+	//		Float: ManipulateBoneAngles r value
+	//
+	//		Float: ManipulateBoneScale x value
+	//		Float: ManipulateBoneScale y value
+	//		Float: ManipulateBoneScale z value
 
 	util.AddNetworkString("AdvBone_BoneManipPaste_SendToSv")
 
@@ -978,9 +988,9 @@ if SERVER then
 			local targetbone = net.ReadString()
 			local scaletarget = net.ReadBool()
 
-			local newpos = net.ReadVector()
-			local newang = net.ReadAngle()
-			local newscl = net.ReadVector()
+			local newpos = Vector(net.ReadFloat(), net.ReadFloat(), net.ReadFloat())
+			local newang = Angle(net.ReadFloat(), net.ReadFloat(), net.ReadFloat())
+			local newscl = Vector(net.ReadFloat(), net.ReadFloat(), net.ReadFloat())
 
 			if IsValid(ent) then
 				if ent.AdvBone_BoneInfo and ent.AdvBone_BoneInfo[id] then
@@ -1363,10 +1373,16 @@ if CLIENT then
 
 										net.WriteString(entry.targetbone)
 										net.WriteBool(entry.scaletarget)
-											
-										net.WriteVector(entry.trans)
-										net.WriteAngle(entry.rot)
-										net.WriteVector(entry.scale)
+										
+										net.WriteFloat(entry.trans.x) //send 3 floats instead of a vector, because net.WriteVector clobbers precise values
+										net.WriteFloat(entry.trans.y)
+										net.WriteFloat(entry.trans.z)
+										net.WriteFloat(entry.rot.p)
+										net.WriteFloat(entry.rot.y)
+										net.WriteFloat(entry.rot.r)
+										net.WriteFloat(entry.scale.x)
+										net.WriteFloat(entry.scale.y)
+										net.WriteFloat(entry.scale.z)
 									end
 								net.SendToServer()
 
@@ -2190,26 +2206,29 @@ if CLIENT then
 		local slider = panel.bonemanipcontainer:NumSlider("Move X", nil, -128, 128, 2)
 		slider.ValueChanged = SliderValueChangedUnclamped
 		slider.SetValue = SliderSetValueUnclamped
-		slider.OnValueChanged = function() MsgN("ran OnValueChanged") SendBoneManipToServer(panel.slider_trans_x) end
 		slider:SetHeight(9)
-		slider:SetDefaultValue(0.00)
+		slider:SetDefaultValue(0.000)
+		slider:SetDecimals(3)
 		panel.slider_trans_x = slider
+		slider.OnValueChanged = function() SendBoneManipToServer(panel.slider_trans_x) end
 
 		local slider = panel.bonemanipcontainer:NumSlider("Move Y", nil, -128, 128, 2)
 		slider.ValueChanged = SliderValueChangedUnclamped
 		slider.SetValue = SliderSetValueUnclamped
-		slider.OnValueChanged = function() SendBoneManipToServer(panel.slider_trans_y) end
 		slider:SetHeight(9)
-		slider:SetDefaultValue(0.00)
+		slider:SetDefaultValue(0.000)
+		slider:SetDecimals(3)
 		panel.slider_trans_y = slider
+		slider.OnValueChanged = function() SendBoneManipToServer(panel.slider_trans_y) end
 
 		local slider = panel.bonemanipcontainer:NumSlider("Move Z", nil, -128, 128, 2)
 		slider.ValueChanged = SliderValueChangedUnclamped
 		slider.SetValue = SliderSetValueUnclamped
-		slider.OnValueChanged = function() SendBoneManipToServer(panel.slider_trans_z) end
 		slider:SetHeight(9)
-		slider:SetDefaultValue(0.00)
+		slider:SetDefaultValue(0.000)
+		slider:SetDecimals(3)
 		panel.slider_trans_z = slider
+		slider.OnValueChanged = function() SendBoneManipToServer(panel.slider_trans_z) end
 
 
 		panel.bonemanipcontainer:Help("")
@@ -2217,22 +2236,25 @@ if CLIENT then
 
 		//Rotation
 		local slider = panel.bonemanipcontainer:NumSlider("Pitch", nil, -180, 180, 2)
-		slider.OnValueChanged = function() SendBoneManipToServer(panel.slider_rot_p) end
 		slider:SetHeight(9)
-		slider:SetDefaultValue(0.00)
+		slider:SetDefaultValue(0.000)
+		slider:SetDecimals(3)
 		panel.slider_rot_p = slider
+		slider.OnValueChanged = function() SendBoneManipToServer(panel.slider_rot_p) end
 
 		local slider = panel.bonemanipcontainer:NumSlider("Yaw", nil, -180, 180, 2)
-		slider.OnValueChanged = function() SendBoneManipToServer(panel.slider_rot_y) end
 		slider:SetHeight(9)
-		slider:SetDefaultValue(0.00)
+		slider:SetDefaultValue(0.000)
+		slider:SetDecimals(3)
 		panel.slider_rot_y = slider
+		slider.OnValueChanged = function() SendBoneManipToServer(panel.slider_rot_y) end
 
 		local slider = panel.bonemanipcontainer:NumSlider("Roll", nil, -180, 180, 2)
-		slider.OnValueChanged = function() SendBoneManipToServer(panel.slider_rot_r) end
 		slider:SetHeight(9)
-		slider:SetDefaultValue(0.00)
+		slider:SetDefaultValue(0.000)
+		slider:SetDecimals(3)
 		panel.slider_rot_r = slider
+		slider.OnValueChanged = function() SendBoneManipToServer(panel.slider_rot_r) end
 
 
 		panel.bonemanipcontainer:Help("")
@@ -2242,30 +2264,37 @@ if CLIENT then
 		local slider = panel.bonemanipcontainer:NumSlider("Scale X", nil, 0, 20, 2)
 		slider.ValueChanged = SliderValueChangedUnclamped
 		slider.SetValue = SliderSetValueUnclamped
-		slider.OnValueChanged = function() SendBoneManipToServer(panel.slider_scale_x) end
 		slider:SetHeight(9)
-		slider:SetDefaultValue(1.00)
+		slider:SetDefaultValue(1.000)
+		slider:SetDecimals(3)
 		panel.slider_scale_x = slider
+		slider.OnValueChanged = function() SendBoneManipToServer(panel.slider_scale_x) end
 
 		local slider = panel.bonemanipcontainer:NumSlider("Scale Y", nil, 0, 20, 2)
 		slider.ValueChanged = SliderValueChangedUnclamped
 		slider.SetValue = SliderSetValueUnclamped
-		slider.OnValueChanged = function() SendBoneManipToServer(panel.slider_scale_y) end
 		slider:SetHeight(9)
-		slider:SetDefaultValue(1.00)
+		slider:SetDefaultValue(1.000)
+		slider:SetDecimals(3)
 		panel.slider_scale_y = slider
+		slider.OnValueChanged = function() SendBoneManipToServer(panel.slider_scale_y) end
 
 		local slider = panel.bonemanipcontainer:NumSlider("Scale Z", nil, 0, 20, 2)
 		slider.ValueChanged = SliderValueChangedUnclamped
 		slider.SetValue = SliderSetValueUnclamped
-		slider.OnValueChanged = function() SendBoneManipToServer(panel.slider_scale_z) end
 		slider:SetHeight(9)
-		slider:SetDefaultValue(1.00)
+		slider:SetDefaultValue(1.000)
+		slider:SetDecimals(3)
 		panel.slider_scale_z = slider
+		slider.OnValueChanged = function() SendBoneManipToServer(panel.slider_scale_z) end
 
 		local slider = panel.bonemanipcontainer:NumSlider("Scale XYZ", nil, 0, 20, 2)
 		slider.ValueChanged = SliderValueChangedUnclamped
 		slider.SetValue = SliderSetValueUnclamped
+		slider:SetHeight(9)
+		slider:SetDefaultValue(1.000)
+		slider:SetDecimals(3)
+		panel.slider_scale_xyz = slider
 		slider.OnValueChanged = function()
 			if panel.UpdatingBoneManipOptions then return end
 			local val = panel.slider_scale_xyz:GetValue()
@@ -2274,17 +2303,14 @@ if CLIENT then
 			panel.slider_scale_z:SetValue(val)
 			SendBoneManipToServer(panel.slider_scale_xyz) 
 		end
-		slider:SetHeight(9)
-		slider:SetDefaultValue(1.00)
-		panel.slider_scale_xyz = slider
 
 		local checkbox = panel.bonemanipcontainer:CheckBox("Scale with target bone", nil)
 		checkbox:SetHeight(15)
+		panel.checkbox_scaletarget = checkbox
 		checkbox.OnChange = function()
 			checkbox.conflict = nil
 			SendBoneManipToServer(panel.checkbox_scaletarget) 
 		end
-		panel.checkbox_scaletarget = checkbox
 		local old_Paint = checkbox.Button.Paint
 		function checkbox.Button:Paint(w, h)
 			old_Paint(self, w, h)

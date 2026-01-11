@@ -691,21 +691,27 @@ if SERVER then
 					net.Start("AdvBone_BoneManipPos_SendToCl")
 						net.WriteEntity(ent)
 						net.WriteInt(boneID, 9)
-						net.WriteVector(tab.p)
+						net.WriteFloat(tab.p.x) //send 3 floats instead of a vector, because net.WriteVector clobbers precise values
+						net.WriteFloat(tab.p.y)
+						net.WriteFloat(tab.p.z)
 					net.Send(ply)
 				end
 				if tab.a then
 					net.Start("AdvBone_BoneManipAng_SendToCl")
 						net.WriteEntity(ent)
 						net.WriteInt(boneID, 9)
-						net.WriteAngle(tab.a)
+						net.WriteFloat(tab.a.p)
+						net.WriteFloat(tab.a.y)
+						net.WriteFloat(tab.a.r)
 					net.Send(ply)
 				end
 				if tab.s then
 					net.Start("AdvBone_BoneManipScale_SendToCl")
 						net.WriteEntity(ent)
 						net.WriteInt(boneID, 9)
-						net.WriteVector(tab.s)
+						net.WriteFloat(tab.s.x)
+						net.WriteFloat(tab.s.y)
+						net.WriteFloat(tab.s.z)
 					net.Send(ply)
 				end
 			end
@@ -1504,12 +1510,14 @@ if old_ManipulateBonePosition then
 					net.Start("AdvBone_BoneManipPos_SendToCl")
 						net.WriteEntity(ent)
 						net.WriteInt(boneID, 9)
-						net.WriteVector(pos)
+						net.WriteFloat(pos.x) //send 3 floats instead of a vector, because net.WriteVector clobbers precise values
+						net.WriteFloat(pos.y)
+						net.WriteFloat(pos.z)
 					net.Broadcast()
 				end
 
 				ent.AdvBone_BoneManips[boneID] = ent.AdvBone_BoneManips[boneID] or {}
-				ent.AdvBone_BoneManips[boneID].p = pos
+				ent.AdvBone_BoneManips[boneID].p = Vector(pos)
 				if CLIENT then ent.LastBoneChangeTime = CurTime() end
 			end
 			AdvBone_ResetBoneChangeTimeOnChildren(ent, networking2)
@@ -1526,7 +1534,7 @@ else
 	net.Receive("AdvBone_BoneManipPos_SendToCl", function()
 		local ent = net.ReadEntity()
 		local boneID = net.ReadInt(9)
-		local pos = net.ReadVector()
+		local pos = Vector(net.ReadFloat(), net.ReadFloat(), net.ReadFloat())
 
 		if IsValid(ent) then
 			ent:ManipulateBonePosition(boneID, pos)
@@ -1561,12 +1569,14 @@ if old_ManipulateBoneAngles then
 					net.Start("AdvBone_BoneManipAng_SendToCl")
 						net.WriteEntity(ent)
 						net.WriteInt(boneID, 9)
-						net.WriteAngle(ang)
+						net.WriteFloat(ang.p)
+						net.WriteFloat(ang.y)
+						net.WriteFloat(ang.r)
 					net.Broadcast()
 				end
 
 				ent.AdvBone_BoneManips[boneID] = ent.AdvBone_BoneManips[boneID] or {}
-				ent.AdvBone_BoneManips[boneID].a = ang
+				ent.AdvBone_BoneManips[boneID].a = Angle(ang)
 				if CLIENT then ent.LastBoneChangeTime = CurTime() end
 			end
 			AdvBone_ResetBoneChangeTimeOnChildren(ent, networking2)
@@ -1583,7 +1593,7 @@ else
 	net.Receive("AdvBone_BoneManipAng_SendToCl", function()
 		local ent = net.ReadEntity()
 		local boneID = net.ReadInt(9)
-		local ang = net.ReadAngle()
+		local ang = Angle(net.ReadFloat(), net.ReadFloat(), net.ReadFloat())
 
 		if IsValid(ent) then
 			ent:ManipulateBoneAngles(boneID, ang)
@@ -1616,12 +1626,14 @@ if old_ManipulateBoneScale then
 					net.Start("AdvBone_BoneManipScale_SendToCl")
 						net.WriteEntity(ent)
 						net.WriteInt(boneID, 9)
-						net.WriteVector(scale)
+						net.WriteFloat(scale.x)
+						net.WriteFloat(scale.y)
+						net.WriteFloat(scale.z)
 					net.Broadcast()
 				end
 				
 				ent.AdvBone_BoneManips[boneID] = ent.AdvBone_BoneManips[boneID] or {}
-				ent.AdvBone_BoneManips[boneID].s = scale
+				ent.AdvBone_BoneManips[boneID].s = Vector(scale)
 				if CLIENT then ent.LastBoneChangeTime = CurTime() end
 			end
 			AdvBone_ResetBoneChangeTimeOnChildren(ent, true)
@@ -1639,7 +1651,7 @@ else
 	net.Receive("AdvBone_BoneManipScale_SendToCl", function()
 		local ent = net.ReadEntity()
 		local boneID = net.ReadInt(9)
-		local scale = net.ReadVector()
+		local scale = Vector(net.ReadFloat(), net.ReadFloat(), net.ReadFloat())
 
 		if IsValid(ent) then
 			ent:ManipulateBoneScale(boneID, scale)
