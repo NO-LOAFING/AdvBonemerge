@@ -355,6 +355,9 @@ function TOOL:LeftClick(trace)
 			if !IsValid(newent) then return end
 			net.Start("AdvBone_NewModelToCPanel_SendToCl")
 				net.WriteEntity(newent)
+				//sometimes, if we unmerge and remerge an ent with a custom name, it won't have made it to the client yet
+				//when we create the node, so send the custom name again here just to be sure the client gets it in time.
+				net.WriteString(newent:GetNWString("AdvBone_CustomName", ""))
 			net.Send(ply)
 		end)
 
@@ -375,11 +378,13 @@ end
 if CLIENT then
 	//If we received a new entity, then add it to the controlpanel's list
 	net.Receive("AdvBone_NewModelToCPanel_SendToCl", function()
+		local ent = net.ReadEntity()
+		local str = net.ReadString()
+
 		local panel = controlpanel.Get("advbonemerge")
 		if !panel or !panel.modellist then return end
-
-		local ent = net.ReadEntity()
 		if !IsValid(ent) then return end
+
 		//If you merge, unmerge, then merge again an animprop without opening the menu between them, it'll add a duplicate node unless we check for this. 
 		//For some reason, this doesn't happen with normal merged ents, because the original node gets removed on unmerge somewhere i can't figure out - 
 		//in fact, doing this check with normal ents can give false positives sometimes and prevent any node from being added at all.
@@ -389,7 +394,8 @@ if CLIENT then
 		if parent.AttachedEntity then parent = parent.AttachedEntity end
 		if !IsValid(parent) then return end
 		if !panel.modellist.AllNodes[parent:EntIndex()] then return end
-
+		
+		if str != "" then ent:SetNWString("AdvBone_CustomName", str) end
 		panel.modellist.AddModelNodes(ent, panel.modellist.AllNodes[parent:EntIndex()])
 	end)
 end
@@ -856,6 +862,7 @@ if SERVER then
 				if !IsValid(newent) then return end
 				net.Start("AdvBone_NewModelToCPanel_SendToCl")
 					net.WriteEntity(newent)
+					net.WriteString(newent:GetNWString("AdvBone_CustomName", ""))
 				net.Send(ply)
 			end)
 		
@@ -944,6 +951,25 @@ if SERVER then
 			ply:ConCommand("gmod_tool finger")
 			tool:RightClick(tr)
 
+		elseif input == 11 then //set custom name
+
+			local str = net.ReadString()
+
+			if str != "" then
+				ent:SetNWString("AdvBone_CustomName", str)
+				duplicator.StoreEntityModifier(ent, "AdvBone_CustomName", {name = str})
+			else
+				ent:SetNWString("AdvBone_CustomName", nil)
+				duplicator.ClearEntityModifier(ent, "AdvBone_CustomName")
+			end
+
+		end
+	end)
+
+	duplicator.RegisterEntityModifier("AdvBone_CustomName", function(ply, ent, data)
+		if IsValid(ent) then
+			ent:SetNWString("AdvBone_CustomName", data.name)
+			duplicator.StoreEntityModifier(ent, "AdvBone_CustomName", data) //is this necessary?
 		end
 	end)
 
@@ -1157,7 +1183,7 @@ if CLIENT then
 					modelent:SetupBones()
 					modelent:InvalidateBoneCache()
 
-					local nodename = string.StripExtension( string.GetFileFromFilename( modelent:GetModel() ) )
+					local nodename = string.StripExtension( string.GetFileFromFilename(modelent:GetModel()) )
 					local doparticlenamethink = false
 					local function DoParticleNodeName(k)
 						//ParticleControlOverhaul grip points display the name of the particle instead
@@ -1205,6 +1231,17 @@ if CLIENT then
 						end
 					end
 					local node = parent:AddNode(nodename)
+
+					local updatename = function() //this is a function so we can update the name after renaming or doing particlenamethink
+						local cust = modelent:GetNWString("AdvBone_CustomName", "")
+						if cust != "" then
+							node:SetText('"' .. cust .. '"')
+						else
+							node:SetText(nodename)
+						end
+					end
+					updatename()
+
 					local nodeseticon = function(skinid) //this is a function so we can update the icon skin when using the skin utility
 						if modelent.PartCtrl_Grip or (modelent.GetPartCtrl_MergedGrip and modelent:GetPartCtrl_MergedGrip()) then
 							node.Icon:SetImage("icon16/fire.png")
@@ -1239,7 +1276,7 @@ if CLIENT then
 
 						//Unmerge
 						if IsValid(modelent:GetParent()) and (modelent:GetClass() == "ent_advbonemerge" or modelent:GetClass() == "prop_animated") then
-							local option = menu:AddOption("Unmerge \'\'" .. nodename .. "\'\'", function()
+							local option = menu:AddOption('Unmerge "' .. string.Trim(node:GetText(), '"') .. '"', function()
 								//Send a message to the server telling it to unmerge the entity
 								net.Start("AdvBone_CPanelInput_SendToSv")
 									net.WriteEntity(modelent)
@@ -1398,8 +1435,16 @@ if CLIENT then
 						end)
 						option:SetImage("icon16/page_paste.png")
 
-						//Utilities
 						local spacer = menu:AddSpacer()
+
+						//Rename
+						local option = menu:AddOption("Rename", function()
+							//add a dropdown option for this too, just in case double-clicking isn't obvious
+							node:DoEditName()
+						end)
+						option:SetImage("icon16/textfield_rename.png")
+
+						//Utilities
 						local submenu, submenuoption = menu:AddSubMenu("Utilities")
 						submenuoption:SetImage("icon16/folder.png")
 						local utilitiesnotempty = false
@@ -1632,7 +1677,6 @@ if CLIENT then
 						
 						if !utilitiesnotempty then 
 							submenuoption:Remove()
-							spacer:Remove()
 						end
 
 						//Edit ParticleControlOverhaul fx
@@ -1645,6 +1689,65 @@ if CLIENT then
 						end
 
 						menu:Open()
+					end
+
+					//Double Click: Set a custom name for the node
+					node.DoEditName = function()
+						//almost entirely pilfered from DLabelEditable, this is distressingly simple (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/dlabeleditable.lua)
+
+						local TextEdit = vgui.Create("DTextEntry", node.Label)
+						TextEdit:Dock(FILL)
+						TextEdit:DockMargin(node.Icon.x + node.Icon:GetWide(), 0, 0, 0)
+						//TextEdit:SetText(node:GetText())
+						//TextEdit:SetFont(node:GetFont())
+						if node:GetText() != nodename then TextEdit:SetText(string.Trim(node:GetText(), '"')) end
+
+						//this doesn't work, node.Label is forced to the full width of the panel by node's PerformLayout func (https://github.com/Facepunch/garrysmod/blob/master/garrysmod/lua/vgui/dtree_node.lua#L290)
+						//TextEdit.OnTextChanged = function()
+						//	node.Label:SizeToContents()
+						//end
+
+						TextEdit.OnEnter = function()
+							local text = node:OnLabelTextChanged(TextEdit:GetText()) or TextEdit:GetText()
+							if (text:byte() == 35) then text = "#" .. text end -- Hack!
+
+							//node:SetText(text)
+							hook.Run("OnTextEntryLoseFocus", TextEdit)
+							TextEdit:Remove()
+						end
+
+						TextEdit.OnLoseFocus = function()
+							hook.Run("OnTextEntryLoseFocus", TextEdit)
+							TextEdit:Remove()
+						end
+
+						TextEdit:RequestFocus()
+						TextEdit:OnGetFocus() -- Because the keyboard input might not be enabled yet! (spawnmenu)
+						TextEdit:SelectAllText( true )
+
+						node._TextEdit = TextEdit
+					end
+
+					node.OnLabelTextChanged = function(node, text)
+						//send new custom name to server, to be stored on the entity
+						net.Start("AdvBone_CPanelInput_SendToSv")
+							net.WriteEntity(modelent)
+							net.WriteUInt(11, 4) //input id 11
+							//extra str for the new name
+							net.WriteString(text)
+						net.SendToServer()
+						//set custom name immediately on the client, and update the label
+						if text != "" then
+							modelent:SetNWString("AdvBone_CustomName", text)
+						else
+							modelent:SetNWString("AdvBone_CustomName", nil)
+						end
+						updatename()
+						return node:GetText()
+					end
+
+					node.Label.DoDoubleClick = function()
+						node:DoEditName()
 					end
 
 					local nodeThinkOld = node.Think or nil
@@ -1701,7 +1804,7 @@ if CLIENT then
 							//info to the client yet, then keep trying until we have it and can set the name properly.
 							DoParticleNodeName()
 							if !doparticlenamethink then
-								node:SetText(nodename)
+								updatename()
 							end
 						end
 					end

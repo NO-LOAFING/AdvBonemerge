@@ -1183,6 +1183,8 @@ if SERVER then
 			if enttable.BodyG != bgnew then enttable.BodyG = bgnew end
 			//Skin
 			if enttable.Skin != self:GetSkin() then enttable.Skin = self:GetSkin() end
+			//Entity mods (setting a custom name will make this different from the original ent)
+			enttable.EntityMods = table.Copy(self.EntityMods)
 
 			//Fix: Due to a badly written function in the duplicator module (PhysicsObject.Load - lua/includes/modules/duplicator.lua:67, uses "Entity" value not defined anywhere in the function), 
 			//using duplicator.Paste here to paste a frozen physobj causes errors. I have no idea why it still works when called by the duplicator itself because it has the same value there, but
