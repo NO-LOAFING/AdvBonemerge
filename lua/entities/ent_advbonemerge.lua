@@ -1219,8 +1219,11 @@ if SERVER then
 				newent.AdvBone_BoneInfo_IsDefault = self.AdvBone_BoneInfo_IsDefault
 			end
 
-			//Copy bone manips - store both advbone manips and garrymanips so that advbone manips are restored on re-merge, but garrymanips are shown on the prop while unmerged
-			target.AdvBone_BoneManips = self.AdvBone_BoneManips
+			//Copy bone manips - store both advbone manips and garrymanips so that advbone manips are restored on re-merge, but garrymanips are shown on the prop while it's unmerged.
+			//If bones are edited on the entity while it's unmerged, changes will be asserted onto both sets of manips, and carry over to the ent once it's re-merged.
+			//This is a little funky because the client won't be able to see the unclamped advbone manips until the ent is re-merged (even the tool's sliders will show garrymanips 
+			//on the ent while it's unmerged), but it's the best we can do, and it keeps all the values intact and consistent between merges.
+			target.AdvBone_BoneManips = {} //this gets repopulated by ManipulateBoneX funcs below
 			for i = -1, self:GetBoneCount() - 1 do
 				local p = self:GetManipulateBonePosition(i)
 				local a = self:GetManipulateBoneAngles(i)

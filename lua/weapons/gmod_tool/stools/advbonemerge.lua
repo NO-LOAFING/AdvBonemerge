@@ -106,13 +106,13 @@ if SERVER then
 		end
 		//Copy bonemanips
 		local hasscalemanip = false
+		newent.AdvBone_BoneManips = {} //this gets repopulated by ManipulateBoneX funcs below
 		for i = -1, oldent:GetBoneCount() - 1 do
 			if oldent:GetManipulateBonePosition(i) != vector_origin then newent:ManipulateBonePosition(i, oldent:GetManipulateBonePosition(i)) end
 			if oldent:GetManipulateBoneAngles(i) != angle_zero then newent:ManipulateBoneAngles(i, oldent:GetManipulateBoneAngles(i)) end
 			if oldent:GetManipulateBoneScale(i) != Vector(1,1,1) then newent:ManipulateBoneScale(i, oldent:GetManipulateBoneScale(i)) hasscalemanip = true end
 			//newent:ManipulateBoneJiggle(i, oldent:GetManipulateBoneJiggle(i))  //broken?
 		end
-		newent.AdvBone_BoneManips = oldent.AdvBone_BoneManips or {} //this overrides the garrymanips to prevent discrepancies caused by a manip being set back to 0 in one table, but not another
 		//Copy over DisableBeardFlexifier, just in case we're an unmerged ent that inherited this value
 		newent:SetNWBool("DisableBeardFlexifier", oldent:GetNWBool("DisableBeardFlexifier"))
 		//Store a value if we're a merged ParticleControlOverhaul grip point
