@@ -37,8 +37,11 @@ function ENT:Initialize()
 
 	end
 
+
 	//Create a clientside advbone manips table so that it gets populated when the server sends us values
 	self.AdvBone_BoneManips = self.AdvBone_BoneManips or {}
+	//Tell the server to send us all the advbone manips along with our first boneinfo table
+	self.AdvBone_BoneManips_ShouldGet = true
 
 	self:AddEffects(EF_BONEMERGE) //necessary for proper shadow rendering
 	self:AddEffects(EF_BONEMERGE_FASTCULL)
@@ -643,6 +646,7 @@ end
 
 //AdvBone_EntBoneInfoTable_GetFromSv structure:
 //	Entity: Entity that needs a BoneInfo table
+//	Bool: Send AdvBone_BoneManips as well?
 
 //AdvBone_EntBoneInfoTable_SendToCl structure:
 //	Entity: Entity that needs a BoneInfo table
@@ -653,6 +657,26 @@ end
 //
 //		Int(9): Target bone index
 //		Bool: Follow target bone scale
+//
+//	Bool: Send AdvBone_BoneManips as well?
+//	IF TRUE, FOR EACH ENTRY:
+//		Int(9): Key for this entry (bone index)
+//		Bool: Do pos manip?
+//		IF TRUE:
+//			Float: Pos X
+//			Float: Pos Y
+//			Float: Pos Z
+//		Bool: Do ang manip?
+//		IF TRUE:
+//			Float: Ang P
+//			Float: Ang Y
+//			Float: Ang R
+//		Bool: Do scale manip?
+//		IF TRUE:
+//			Float: Scale X
+//			Float: Scale Y
+//			Float: Scale Z
+
 
 if SERVER then 
 
@@ -663,6 +687,7 @@ if SERVER then
 	//If we received a request for a boneinfo table, then send it to the client
 	net.Receive("AdvBone_EntBoneInfoTable_GetFromSv", function(_, ply)
 		local ent = net.ReadEntity()
+		local domanips = net.ReadBool()
 		if !IsValid(ent) or !ent.AdvBone_BoneInfo then return end
 
 		net.Start("AdvBone_EntBoneInfoTable_SendToCl", true)
@@ -681,42 +706,35 @@ if SERVER then
 				end
 				net.WriteBool(entry.scale)
 			end
-		net.Send(ply)
 
-		//Also, now that we know the entity has initlalized on the client, we can send it the bonemanips as well
-		ent.AdvBone_BoneManips_Sent = ent.AdvBone_BoneManips_Sent or {}
-		if ent.AdvBone_BoneManips and !ent.AdvBone_BoneManips_Sent[ply] then
-			for boneID, tab in pairs (ent.AdvBone_BoneManips) do
-				if tab.p then
-					net.Start("AdvBone_BoneManipPos_SendToCl")
-						net.WriteEntity(ent)
-						net.WriteInt(boneID, 9)
+			//Also, now that we know the entity has initialized on the client, we can send it the bonemanips as well
+			net.WriteBool(domanips)
+			if domanips then
+				//PrintTable(ent.AdvBone_BoneManips)
+				net.WriteInt(table.Count(ent.AdvBone_BoneManips), 9)
+				for boneID, tab in pairs (ent.AdvBone_BoneManips) do
+					net.WriteInt(boneID, 9)
+					net.WriteBool(tab.p)
+					if tab.p then
 						net.WriteFloat(tab.p.x) //send 3 floats instead of a vector, because net.WriteVector clobbers precise values
 						net.WriteFloat(tab.p.y)
 						net.WriteFloat(tab.p.z)
-					net.Send(ply)
-				end
-				if tab.a then
-					net.Start("AdvBone_BoneManipAng_SendToCl")
-						net.WriteEntity(ent)
-						net.WriteInt(boneID, 9)
+					end
+					net.WriteBool(tab.a)
+					if tab.a then
 						net.WriteFloat(tab.a.p)
 						net.WriteFloat(tab.a.y)
 						net.WriteFloat(tab.a.r)
-					net.Send(ply)
-				end
-				if tab.s then
-					net.Start("AdvBone_BoneManipScale_SendToCl")
-						net.WriteEntity(ent)
-						net.WriteInt(boneID, 9)
+					end
+					net.WriteBool(tab.s)
+					if tab.s then
 						net.WriteFloat(tab.s.x)
 						net.WriteFloat(tab.s.y)
 						net.WriteFloat(tab.s.z)
-					net.Send(ply)
+					end
 				end
 			end
-			ent.AdvBone_BoneManips_Sent[ply] = true
-		end
+		net.Send(ply)
 	end)
 
 end
@@ -738,6 +756,7 @@ if CLIENT then
 			end
 		end
 
+		//new BoneInfo table
 		local count = net.ReadInt(9)
 		local tab = {}
 		for i = 1, count do
@@ -757,26 +776,58 @@ if CLIENT then
 				scale = net.ReadBool(),
 			}
 		end
+
+		//first-time AdvBone_BoneManips table
+		local tab2
+		if net.ReadBool() then
+			local count = net.ReadInt(9)
+			tab2 = {}
+			for i = 1, count do
+				local key = net.ReadInt(9)
+				tab2[key] = {}
+
+				if net.ReadBool() then
+					tab2[key].p = Vector(net.ReadFloat(), net.ReadFloat(), net.ReadFloat())
+				end
+				if net.ReadBool() then
+					tab2[key].a = Angle(net.ReadFloat(), net.ReadFloat(), net.ReadFloat())
+				end
+				if net.ReadBool() then
+					tab2[key].s = Vector(net.ReadFloat(), net.ReadFloat(), net.ReadFloat())
+				end
+			end
+			//PrintTable(tab2)
+		end
 		
-		if IsValid(ent) and (IsValid(parent) or ent:GetClass() == "prop_animated") and !ent.AdvBone_BoneInfo_Received then
-			//BUG: In some instances, entities "merged via constraint" will initially receive a mangled boneinfo table with exactly the same contents every time (with a lot of
-			//useless keys such as a bone -256). Serverside, the table being sent is fine - the issue only occurs on the client's end, when receiving it. These tables are always
-			//caught by the above condition, because for some reason, whenever these tables are received, ent:GetParent() is always invalid (even though the parent IS valid when 
-			//the entity requests the table from the server in the first place??) but this shouldn't be considered a reliable fix because this is clearly a symptom of a much more
-			//complicated problem. Don't be surprised if this comes up again.
-			//UPDATE 3-8-18: This came up again with boneinfo tables on prop_animated, but turned out to just be the result of bad networking (net.Writes not matching net.Reads).
-			//Maybe look into this again and try to actually fix the problem, now that we know it's not as inscrutable as we thought?
-			local keys = {}
-			for k, _ in pairs (tab) do
-				table.insert(keys, k)
+		if IsValid(ent) then 
+			if (IsValid(parent) or ent:GetClass() == "prop_animated") and !ent.AdvBone_BoneInfo_Received then
+				//BUG: In some instances, entities "merged via constraint" will initially receive a mangled boneinfo table with exactly the same contents every time (with a lot of
+				//useless keys such as a bone -256). Serverside, the table being sent is fine - the issue only occurs on the client's end, when receiving it. These tables are always
+				//caught by the above condition, because for some reason, whenever these tables are received, ent:GetParent() is always invalid (even though the parent IS valid when 
+				//the entity requests the table from the server in the first place??) but this shouldn't be considered a reliable fix because this is clearly a symptom of a much more
+				//complicated problem. Don't be surprised if this comes up again.
+				//UPDATE 3-8-18: This came up again with boneinfo tables on prop_animated, but turned out to just be the result of bad networking (net.Writes not matching net.Reads).
+				//Maybe look into this again and try to actually fix the problem, now that we know it's not as inscrutable as we thought?
+				local keys = {}
+				for k, _ in pairs (tab) do
+					table.insert(keys, k)
+				end
+				if math.min(unpack(keys)) < -1 then //this shouldn't ever happen - see above
+					MsgN(ent, " (", ent:GetModel(), "): received garbage boneinfo table, not using") 
+					return
+				end
+				ent.AdvBone_BoneInfo = tab
+				ent.AdvBone_BoneInfo_Received = true
+				ent.LastBoneChangeTime = CurTime()
 			end
-			if math.min(unpack(keys)) < -1 then //this shouldn't ever happen - see above
-				MsgN(ent, " (", ent:GetModel(), "): received garbage boneinfo table, not using") 
-				return
+			if ent.AdvBone_BoneManips_ShouldGet and tab2 then
+				for k, v in pairs (tab2) do
+					if v.p then ent:ManipulateBonePosition(k, v.p) end
+					if v.a then ent:ManipulateBoneAngles(k, v.a) end
+					if v.s then ent:ManipulateBoneScale(k, v.s) end
+				end
+				ent.AdvBone_BoneManips_ShouldGet = nil
 			end
-			ent.AdvBone_BoneInfo = tab
-			ent.AdvBone_BoneInfo_Received = true
-			ent.LastBoneChangeTime = CurTime()
 		end
 	end)
 
@@ -801,6 +852,7 @@ if CLIENT then
 			if !self.AdvBone_BoneInfo_Received then
 				net.Start("AdvBone_EntBoneInfoTable_GetFromSv", true)
 					net.WriteEntity(self)
+					net.WriteBool(self.AdvBone_BoneManips_ShouldGet)
 				net.SendToServer()
 			end
 
@@ -1506,13 +1558,14 @@ end
 local old_ManipulateBonePosition = meta.ManipulateBonePosition
 if old_ManipulateBonePosition then
 	function meta.ManipulateBonePosition(ent, boneID, pos, networking, ...)
+		local advbone_ent = (ent:GetClass() == "ent_advbonemerge" or ent:GetClass() == "prop_animated")
 		if isentity(ent) and IsValid(ent) then
 			local networking2 = networking //local var here so we send the original nil value to the old_ func
 			if networking2 == nil then networking2 = true end
 
 			if ent.AdvBone_BoneManips then
-				if SERVER and networking2 and !ent.AdvBone_BoneManips_DontNetwork and pos != ent:GetManipulateBonePosition(boneID) then
-					net.Start("AdvBone_BoneManipPos_SendToCl")
+				if SERVER and networking2 and advbone_ent and !ent.AdvBone_BoneManips_DontNetwork and pos != ent:GetManipulateBonePosition(boneID) then
+					net.Start("AdvBone_BoneManipPos_SendToCl", true) //use unreliable channel; better to desync with clients than to crash the game by sending too many
 						net.WriteEntity(ent)
 						net.WriteInt(boneID, 9)
 						net.WriteFloat(pos.x) //send 3 floats instead of a vector, because net.WriteVector clobbers precise values
@@ -1521,13 +1574,20 @@ if old_ManipulateBonePosition then
 					net.Broadcast()
 				end
 
-				ent.AdvBone_BoneManips[boneID] = ent.AdvBone_BoneManips[boneID] or {}
-				ent.AdvBone_BoneManips[boneID].p = Vector(pos)
+				if pos != vector_origin then
+					ent.AdvBone_BoneManips[boneID] = ent.AdvBone_BoneManips[boneID] or {}
+					ent.AdvBone_BoneManips[boneID].p = Vector(pos)
+				elseif istable(ent.AdvBone_BoneManips[boneID]) then
+					ent.AdvBone_BoneManips[boneID].p = nil
+					if table.Count(ent.AdvBone_BoneManips[boneID]) == 0 then
+						ent.AdvBone_BoneManips[boneID] = nil
+					end
+				end
 				if CLIENT then ent.LastBoneChangeTime = CurTime() end
 			end
 			AdvBone_ResetBoneChangeTimeOnChildren(ent, networking2)
 		end
-		if !(ent:GetClass() == "ent_advbonemerge" or ent:GetClass() == "prop_animated") then
+		if !advbone_ent then
 			return old_ManipulateBonePosition(ent, boneID, pos, networking, ...)  //this doesn't usually return anything, but it's possible some other addon has overriden the function
 		end									      //so it does, so let it return just in case
 	end
@@ -1565,13 +1625,14 @@ end
 local old_ManipulateBoneAngles = meta.ManipulateBoneAngles
 if old_ManipulateBoneAngles then
 	function meta.ManipulateBoneAngles(ent, boneID, ang, networking, ...)
+		local advbone_ent = (ent:GetClass() == "ent_advbonemerge" or ent:GetClass() == "prop_animated")
 		if isentity(ent) and IsValid(ent) then
 			local networking2 = networking //local var here so we send the original nil value to the old_ func
 			if networking2 == nil then networking2 = true end
 
 			if ent.AdvBone_BoneManips then
-				if SERVER and networking2 and !ent.AdvBone_BoneManips_DontNetwork and ang != ent:GetManipulateBoneAngles(boneID) then
-					net.Start("AdvBone_BoneManipAng_SendToCl")
+				if SERVER and networking2 and advbone_ent and !ent.AdvBone_BoneManips_DontNetwork and ang != ent:GetManipulateBoneAngles(boneID) then
+					net.Start("AdvBone_BoneManipAng_SendToCl", true)
 						net.WriteEntity(ent)
 						net.WriteInt(boneID, 9)
 						net.WriteFloat(ang.p)
@@ -1580,13 +1641,20 @@ if old_ManipulateBoneAngles then
 					net.Broadcast()
 				end
 
-				ent.AdvBone_BoneManips[boneID] = ent.AdvBone_BoneManips[boneID] or {}
-				ent.AdvBone_BoneManips[boneID].a = Angle(ang)
+				if ang != angle_zero then
+					ent.AdvBone_BoneManips[boneID] = ent.AdvBone_BoneManips[boneID] or {}
+					ent.AdvBone_BoneManips[boneID].a = Angle(ang)
+				elseif istable(ent.AdvBone_BoneManips[boneID]) then
+					ent.AdvBone_BoneManips[boneID].a = nil
+					if table.Count(ent.AdvBone_BoneManips[boneID]) == 0 then
+						ent.AdvBone_BoneManips[boneID] = nil
+					end
+				end
 				if CLIENT then ent.LastBoneChangeTime = CurTime() end
 			end
 			AdvBone_ResetBoneChangeTimeOnChildren(ent, networking2)
 		end
-		if !(ent:GetClass() == "ent_advbonemerge" or ent:GetClass() == "prop_animated") then
+		if !advbone_ent then
 			return old_ManipulateBoneAngles(ent, boneID, ang, networking, ...)  //this doesn't usually return anything, but it's possible some other addon has overriden the function
 		end									    //so it does, so let it return just in case
 	end
@@ -1621,14 +1689,17 @@ end
 
 
 //Scale functions
+local vec1 = Vector(1,1,1)
 local old_ManipulateBoneScale = meta.ManipulateBoneScale
 if old_ManipulateBoneScale then
 	function meta.ManipulateBoneScale(ent, boneID, scale, ...)
+		//local advbone_ent = (ent:GetClass() == "ent_advbonemerge" or ent:GetClass() == "prop_animated")
+		local advbone_ent = (ent:GetClass() == "ent_advbonemerge" or (ent:GetClass() == "prop_animated" and ent:GetBoneName(boneID) != "static_prop")) //static_prop animprops should still use garrymanips for scale
 		if isentity(ent) and IsValid(ent) then
 			if ent.AdvBone_BoneManips then
 				//ManipulateBoneScale has no "networking" arg, confirmed through testing 1/1/23
-				if SERVER and !ent.AdvBone_BoneManips_DontNetwork and scale != ent:GetManipulateBoneScale(boneID) then
-					net.Start("AdvBone_BoneManipScale_SendToCl")
+				if SERVER and advbone_ent and !ent.AdvBone_BoneManips_DontNetwork and scale != ent:GetManipulateBoneScale(boneID) then
+					net.Start("AdvBone_BoneManipScale_SendToCl", true)
 						net.WriteEntity(ent)
 						net.WriteInt(boneID, 9)
 						net.WriteFloat(scale.x)
@@ -1637,14 +1708,20 @@ if old_ManipulateBoneScale then
 					net.Broadcast()
 				end
 				
-				ent.AdvBone_BoneManips[boneID] = ent.AdvBone_BoneManips[boneID] or {}
-				ent.AdvBone_BoneManips[boneID].s = Vector(scale)
+				if scale != vec1 then
+					ent.AdvBone_BoneManips[boneID] = ent.AdvBone_BoneManips[boneID] or {}
+					ent.AdvBone_BoneManips[boneID].s = Vector(scale)
+				elseif istable(ent.AdvBone_BoneManips[boneID]) then
+					ent.AdvBone_BoneManips[boneID].s = nil
+					if table.Count(ent.AdvBone_BoneManips[boneID]) == 0 then
+						ent.AdvBone_BoneManips[boneID] = nil
+					end
+				end
 				if CLIENT then ent.LastBoneChangeTime = CurTime() end
 			end
 			AdvBone_ResetBoneChangeTimeOnChildren(ent, true)
 		end
-		//if !(ent:GetClass() == "ent_advbonemerge" or ent:GetClass() == "prop_animated") then
-		if !(ent:GetClass() == "ent_advbonemerge" or (ent:GetClass() == "prop_animated" and ent:GetBoneName(boneID) != "static_prop")) then  //static_prop animprops should still use garrymanips for scale
+		if !advbone_ent then
 			return old_ManipulateBoneScale(ent, boneID, scale, ...)  //this doesn't usually return anything, but it's possible some other addon has overriden the function
 		end								 //so it does, so let it return just in case
 	end

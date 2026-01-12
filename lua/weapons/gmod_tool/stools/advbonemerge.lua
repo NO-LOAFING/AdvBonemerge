@@ -108,9 +108,9 @@ if SERVER then
 		local hasscalemanip = false
 		newent.AdvBone_BoneManips = {} //this gets repopulated by ManipulateBoneX funcs below
 		for i = -1, oldent:GetBoneCount() - 1 do
-			if oldent:GetManipulateBonePosition(i) != vector_origin then newent:ManipulateBonePosition(i, oldent:GetManipulateBonePosition(i)) end
-			if oldent:GetManipulateBoneAngles(i) != angle_zero then newent:ManipulateBoneAngles(i, oldent:GetManipulateBoneAngles(i)) end
-			if oldent:GetManipulateBoneScale(i) != Vector(1,1,1) then newent:ManipulateBoneScale(i, oldent:GetManipulateBoneScale(i)) hasscalemanip = true end
+			if oldent:GetManipulateBonePosition(i) != vector_origin then newent:ManipulateBonePosition(i, oldent:GetManipulateBonePosition(i), false) end //don't network these to the client yet; the ent's networking funcs will handle it
+			if oldent:GetManipulateBoneAngles(i) != angle_zero then newent:ManipulateBoneAngles(i, oldent:GetManipulateBoneAngles(i), false) end
+			if oldent:GetManipulateBoneScale(i) != Vector(1,1,1) then newent:ManipulateBoneScale(i, oldent:GetManipulateBoneScale(i), false) hasscalemanip = true end
 			//newent:ManipulateBoneJiggle(i, oldent:GetManipulateBoneJiggle(i))  //broken?
 		end
 		//Copy over DisableBeardFlexifier, just in case we're an unmerged ent that inherited this value
