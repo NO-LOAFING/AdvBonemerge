@@ -1866,7 +1866,7 @@ if CLIENT then
 
 
 
-		panel.bonelist = panel:AddControl("ListBox", {
+		panel.bonelist = panel:AddControl("ListBox", { //note: for reference, this is actually a DListView, not a DListBox
 			Label = "Bone", 
 			Height = 300,
 		})
@@ -1881,17 +1881,19 @@ if CLIENT then
 			panel.bonelist:ClearSelection() //TODO: is this unnecessary?
 			panel.UpdateBoneManipOptions()
 
-			if IsValid(ent) and ent:GetBoneCount() and ent:GetBoneCount() != 0 then
-
+			if IsValid(ent) and ent:GetBoneCount() and ent:GetBoneCount() > 0 then
 				ent:SetupBones()
 				ent:InvalidateBoneCache()
 
 				panel.bonelist.Bones = {}
+				local parent = ent:GetParent()
+				local firstline
 
-				local function AddBone(name, id, select)
+				local function AddBone(name, id)
 					local line = panel.bonelist:AddLine(name)
 					panel.bonelist.Bones[id] = line
 					line.id = id
+					firstline = firstline or line
 
 					local selectedtargetbone = -1
 					if ent.AdvBone_BoneInfo and ent.AdvBone_BoneInfo[id] then
@@ -1899,15 +1901,6 @@ if CLIENT then
 						if targetbonestr != "" and IsValid(parent) then selectedtargetbone = parent:LookupBone(targetbonestr) end
 					end
 					if selectedtargetbone != -1 then line.HasTargetBone = true end
-
-					line.OnSelect = function()
-						panel.UpdateBoneManipOptions()
-					end
-
-					if select then
-						line:SetSelected(true)
-						line.OnSelect()
-					end
 
 					//If this bone can have a target bone, then add extra visuals to the list entry to show whether it has one
 					if ent.AdvBone_BoneInfo and IsValid(ent:GetParent()) then
@@ -1942,27 +1935,31 @@ if CLIENT then
 					end
 				end
 
-				local hasoriginmanip = false
 				//AdvBone ents should have an additional control for the model origin, unless they're a "static_prop" model and don't support it (see ent_advbonemerge think function)
 				if ent.AdvBone_BoneInfo and ent:GetBoneName(0) != "static_prop" then
-					AddBone("(origin)", -1, true)
-					hasoriginmanip = true
+					AddBone("(origin)", -1)
 				end
 
 				for id = 0, ent:GetBoneCount() - 1 do
 					local name = ent:GetBoneName(id)
 					if name != "__INVALIDBONE__" then
-						AddBone(name, id, !hasoriginmanip and id == 0) //If we don't have a model origin control, then select bone 0 by default instead; TODO: what if bone 0 is invalid somehow?
+						AddBone(name, id)
 					end
 				end
 
+				if firstline then 
+					panel.bonelist:SelectItem(firstline)
+				end
 			else
 				//Add a placeholder line explaining why the list is empty
 				local line = panel.bonelist:AddLine("(select a model above to edit its bones)")
 			end
 
 		end
-		panel.bonelist.OnRowSelected = function() end  //get rid of the default OnRowSelected function created by the AddControl function
+
+		panel.bonelist.OnRowSelected = function()
+			panel.UpdateBoneManipOptions()
+		end
 
 
 
@@ -2183,7 +2180,7 @@ if CLIENT then
 			panel.targetbonelist:Clear()
 
 			if !IsValid(ent) then return end
-			parent = ent:GetParent()
+			local parent = ent:GetParent()
 			if parent.AttachedEntity then parent = parent.AttachedEntity end
 
 			local selectedtargetbone
