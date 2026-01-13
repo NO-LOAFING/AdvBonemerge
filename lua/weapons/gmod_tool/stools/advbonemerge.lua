@@ -984,20 +984,26 @@ if SERVER then
 	//	FOR EACH ENTRY:
 	//		Int(9): Bone index for this entry
 	//
-	//		String: Target bone name
+	//		Bool: Do target bone name?
+	//		IF TRUE:
+	//			String: Target bone name
 	//		Bool: Follow target bone scale
 	//
-	//		Float: ManipulateBonePosition x value
-	//		Float: ManipulateBonePosition y value
-	//		Float: ManipulateBonePosition z value
-	//
-	//		Float: ManipulateBoneAngles p value
-	//		Float: ManipulateBoneAngles y value
-	//		Float: ManipulateBoneAngles r value
-	//
-	//		Float: ManipulateBoneScale x value
-	//		Float: ManipulateBoneScale y value
-	//		Float: ManipulateBoneScale z value
+	//		Bool: Do pos manip?
+	//		IF TRUE:
+	//			Float: Pos X
+	//			Float: Pos Y
+	//			Float: Pos Z
+	//		Bool: Do ang manip?
+	//		IF TRUE:
+	//			Float: Ang P
+	//			Float: Ang Y
+	//			Float: Ang R
+	//		Bool: Do scale manip?
+	//		IF TRUE:
+	//			Float: Scale X
+	//			Float: Scale Y
+	//			Float: Scale Z
 
 	util.AddNetworkString("AdvBone_BoneManipPaste_SendToSv")
 
@@ -1011,15 +1017,26 @@ if SERVER then
 		for i = 1, count do
 			local id = net.ReadInt(9)
 
-			local targetbone = net.ReadString()
+			local targetbone
+			if net.ReadBool() then
+				targetbone = net.ReadString()
+			end
 			local scaletarget = net.ReadBool()
 
-			local newpos = Vector(net.ReadFloat(), net.ReadFloat(), net.ReadFloat())
-			local newang = Angle(net.ReadFloat(), net.ReadFloat(), net.ReadFloat())
-			local newscl = Vector(net.ReadFloat(), net.ReadFloat(), net.ReadFloat())
+			local newpos, newang, newscl
+			if net.ReadBool() then
+				newpos = Vector(net.ReadFloat(), net.ReadFloat(), net.ReadFloat())
+			end
+			if net.ReadBool() then
+				newang = Angle(net.ReadFloat(), net.ReadFloat(), net.ReadFloat())
+			end
+			if net.ReadBool() then
+				newscl = Vector(net.ReadFloat(), net.ReadFloat(), net.ReadFloat())
+			end
 
 			if IsValid(ent) then
 				if ent.AdvBone_BoneInfo and ent.AdvBone_BoneInfo[id] then
+					if targetbone == nil then targetbone = ent.AdvBone_BoneInfo[id].parent end
 					ent.AdvBone_BoneInfo[id] = {
 						parent = targetbone,
 						scale = scaletarget,
@@ -1029,9 +1046,9 @@ if SERVER then
 					AdvBone_ResetBoneChangeTimeOnChildren(ent, true)
 				end
 
-				ent:ManipulateBonePosition(id,newpos)
-				ent:ManipulateBoneAngles(id,newang)
-				ent:ManipulateBoneScale(id,newscl)
+				if newpos then ent:ManipulateBonePosition(id,newpos) end
+				if newang then ent:ManipulateBoneAngles(id,newang) end
+				if newscl then ent:ManipulateBoneScale(id,newscl) end
 			end
 		end
 
@@ -1364,18 +1381,56 @@ if CLIENT then
 							if !panel.modellist.copypasteinfo then return end
 							local serverinfo = {}
 							local parent = modelent:GetParent()
+							local pastecount = 0
 
 							for bonename, entry in pairs (panel.modellist.copypasteinfo) do
 								local id = modelent:LookupBone(bonename)
 								if bonename == -1 and modelent.AdvBone_BoneInfo and modelent:GetBoneName(0) != "static_prop" then id = -1 end //don't apply bone -1 to ents that don't have origin manips
 
 								if id then
-									//First, apply the new BoneInfo clientside
+									//Compile information to be sent to the server for this bone
+									local serverentry = table.Copy(entry)
+									serverentry.id = id
+
+									//Only send manips to the server if the value has changed, otherwise there's no point
+									//Apply the manips clientside too, so that UpdateBoneManipOptions can get their values immediately
+									if serverentry.trans != modelent:GetManipulateBonePosition(id) then
+										modelent:ManipulateBonePosition(id, serverentry.trans)
+									else
+										serverentry.trans = nil
+									end
+									if serverentry.rot != modelent:GetManipulateBoneAngles(id) then
+										modelent:ManipulateBonePosition(id, serverentry.rot)
+									else
+										serverentry.rot = nil
+									end
+									if serverentry.scale != modelent:GetManipulateBoneScale(id) then
+										modelent:ManipulateBonePosition(id, serverentry.scale)
+									else
+										serverentry.scale = nil
+									end
+									
+									local targetbone_changed
+									local scaletarget_changed
 									if modelent.AdvBone_BoneInfo and modelent.AdvBone_BoneInfo[id] then
+										//Same thing with targetbone, don't send it to the server if the value hasn't changed
+										if modelent.AdvBone_BoneInfo[id].parent != entry.targetbone then
+											targetbone_changed = true
+										end
+										//And scaletarget - this one's a bit different since it'd be silly to network
+										//an "are we sending this" bool for a value that's already a bool, so we always
+										//send it as long as anything on this bone has changed
+										if modelent.AdvBone_BoneInfo[id].scale != entry.scaletarget then
+											scaletarget_changed = true
+										end
+										//Also apply the new BoneInfo clientside
 										modelent.AdvBone_BoneInfo[id] = {
 											parent = entry.targetbone,
 											scale = entry.scaletarget,
 										}
+									end
+									if !targetbone_changed then
+										serverentry.targetbone = nil
 									end
 
 									//Update visuals of list entries to show their new status
@@ -1385,17 +1440,19 @@ if CLIENT then
 										panel.bonelist.Bones[id].HasTargetBone = targetboneid != -1
 									end
 
-									//Apply the manips clientside too, so that UpdateBoneManipOptions can get their values immediately
-									modelent:ManipulateBonePosition(id, entry.trans)
-									modelent:ManipulateBoneAngles(id, entry.rot)
-									modelent:ManipulateBoneScale(id, entry.scale)
-
-									//Then, compile information to be sent to the server for this bone
-									local serverentry = table.Copy(entry)
-									serverentry.id = id
-									table.insert(serverinfo,serverentry)
+									//If nothing has changed for this bone, don't bother sending it to the server
+									if !(!scaletarget_changed and !serverentry.targetbone and !serverentry.trans and !serverentry.rot and !serverentry.scale) then
+										table.insert(serverinfo, serverentry)
+									end
+									//Still keep a count of the number of bones the paste applied to, even if nothing changed
+									pastecount = pastecount + 1
 								end
 							end
+
+							--[[MsgN("client info:")
+							PrintTable(panel.modellist.copypasteinfo)
+							MsgN("server info:")
+							PrintTable(serverinfo)]]
 
 							if table.Count(serverinfo) > 0 then //if none of the bones match then this will still be empty
 								//Then, send all of the information to the server so the duplicator can pick it up	
@@ -1408,18 +1465,30 @@ if CLIENT then
 									for _, entry in pairs (serverinfo) do
 										net.WriteInt(entry.id, 9)
 
-										net.WriteString(entry.targetbone)
-										net.WriteBool(entry.scaletarget)
+										net.WriteBool(entry.targetbone)
+										if entry.targetbone then
+											net.WriteString(entry.targetbone)
+										end
+										net.WriteBool(entry.scaletarget) //no "should we send this" bool for this one since it's already just a bool
 										
-										net.WriteFloat(entry.trans.x) //send 3 floats instead of a vector, because net.WriteVector clobbers precise values
-										net.WriteFloat(entry.trans.y)
-										net.WriteFloat(entry.trans.z)
-										net.WriteFloat(entry.rot.p)
-										net.WriteFloat(entry.rot.y)
-										net.WriteFloat(entry.rot.r)
-										net.WriteFloat(entry.scale.x)
-										net.WriteFloat(entry.scale.y)
-										net.WriteFloat(entry.scale.z)
+										net.WriteBool(entry.trans)
+										if entry.trans then
+											net.WriteFloat(entry.trans.x) //send 3 floats instead of a vector, because net.WriteVector clobbers precise values
+											net.WriteFloat(entry.trans.y)
+											net.WriteFloat(entry.trans.z)
+										end
+										net.WriteBool(entry.rot)
+										if entry.rot then
+											net.WriteFloat(entry.rot.p)
+											net.WriteFloat(entry.rot.y)
+											net.WriteFloat(entry.rot.r)
+										end
+										net.WriteBool(entry.scale)
+										if entry.scale then
+											net.WriteFloat(entry.scale.x)
+											net.WriteFloat(entry.scale.y)
+											net.WriteFloat(entry.scale.z)
+										end
 									end
 								net.SendToServer()
 
@@ -1430,7 +1499,7 @@ if CLIENT then
 								end
 							end
 
-							GAMEMODE:AddNotify("Pasted " .. table.Count(serverinfo) .. " bones", NOTIFY_GENERIC, 2)
+							GAMEMODE:AddNotify("Pasted " .. pastecount .. " bones", NOTIFY_GENERIC, 2)
 							surface.PlaySound("common/wpn_select.wav")
 						end)
 						option:SetImage("icon16/page_paste.png")
