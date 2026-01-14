@@ -1167,6 +1167,140 @@ if CLIENT then
 
 
 
+	local function SendBoneManipPasteToServer(modelent, tab)
+
+		if !tab then return end
+
+		local panel = controlpanel.Get("advbonemerge")
+		if !panel or !panel.modellist then return end
+
+		local serverinfo = {}
+		local parent = modelent:GetParent()
+		local pastecount = 0
+
+		for k, entry in pairs (tab) do
+			local id = modelent:LookupBone(entry.bonename)
+			if entry.bonename == -1 and modelent.AdvBone_BoneInfo and modelent:GetBoneName(0) != "static_prop" then id = -1 end //don't apply bone -1 to ents that don't have origin manips
+
+			if id then
+				//Compile information to be sent to the server for this bone
+				local serverentry = table.Copy(entry)
+				serverentry.id = id
+				serverentry.bonename = nil
+
+				//Only send manips to the server if the value has changed, otherwise there's no point
+				//Apply the manips clientside too, so that UpdateBoneManipOptions can get their values immediately
+				if serverentry.trans != modelent:GetManipulateBonePosition(id) then
+					modelent:ManipulateBonePosition(id, serverentry.trans)
+				else
+					serverentry.trans = nil
+				end
+				if serverentry.rot != modelent:GetManipulateBoneAngles(id) then
+					modelent:ManipulateBoneAngles(id, serverentry.rot)
+				else
+					serverentry.rot = nil
+				end
+				if serverentry.scale != modelent:GetManipulateBoneScale(id) then
+					modelent:ManipulateBoneScale(id, serverentry.scale)
+				else
+					serverentry.scale = nil
+				end
+				
+				local targetbone_changed
+				local scaletarget_changed
+				if modelent.AdvBone_BoneInfo and modelent.AdvBone_BoneInfo[id] then
+					//Same thing with targetbone, don't send it to the server if the value hasn't changed
+					if modelent.AdvBone_BoneInfo[id].parent != entry.targetbone then
+						targetbone_changed = true
+					end
+					//And scaletarget - this one's a bit different since it'd be silly to network
+					//an "are we sending this" bool for a value that's already a bool, so we always
+					//send it as long as anything on this bone has changed
+					if modelent.AdvBone_BoneInfo[id].scale != entry.scaletarget then
+						scaletarget_changed = true
+					end
+					//Also apply the new BoneInfo clientside
+					modelent.AdvBone_BoneInfo[id] = {
+						parent = entry.targetbone,
+						scale = entry.scaletarget,
+					}
+				end
+				if !targetbone_changed then
+					serverentry.targetbone = nil
+				end
+
+				//Update visuals of list entries to show their new status
+				if modelent == panel.modellist.selectedent then
+					local targetboneid = -1
+					if entry.targetbone != "" and IsValid(parent) then targetboneid = parent:LookupBone(entry.targetbone) end
+					panel.bonelist.Bones[id].HasTargetBone = targetboneid != -1
+				end
+
+				//If nothing has changed for this bone, don't bother sending it to the server
+				if !(!scaletarget_changed and !serverentry.targetbone and !serverentry.trans and !serverentry.rot and !serverentry.scale) then
+					table.insert(serverinfo, serverentry)
+				end
+				//Still keep a count of the number of bones the paste applied to, even if nothing changed
+				pastecount = pastecount + 1
+			end
+		end
+
+		--[[MsgN("client info:")
+		PrintTable(tab)
+		MsgN("server info:")
+		PrintTable(serverinfo)]]
+
+		if table.Count(serverinfo) > 0 then //if none of the bones match then this will still be empty
+			//Then, send all of the information to the server so the duplicator can pick it up	
+			net.Start("AdvBone_BoneManipPaste_SendToSv")
+				net.WriteEntity(modelent)
+
+				net.WriteBool(engine.IsRecordingDemo())
+
+				net.WriteInt(table.Count(serverinfo), 9)
+				for _, entry in pairs (serverinfo) do
+					net.WriteInt(entry.id, 9)
+
+					net.WriteBool(entry.targetbone)
+					if entry.targetbone then
+						net.WriteString(entry.targetbone)
+					end
+					net.WriteBool(entry.scaletarget) //no "should we send this" bool for this one since it's already just a bool
+					
+					net.WriteBool(entry.trans)
+					if entry.trans then
+						net.WriteFloat(entry.trans.x) //send 3 floats instead of a vector, because net.WriteVector clobbers precise values
+						net.WriteFloat(entry.trans.y)
+						net.WriteFloat(entry.trans.z)
+					end
+					net.WriteBool(entry.rot)
+					if entry.rot then
+						net.WriteFloat(entry.rot.p)
+						net.WriteFloat(entry.rot.y)
+						net.WriteFloat(entry.rot.r)
+					end
+					net.WriteBool(entry.scale)
+					if entry.scale then
+						net.WriteFloat(entry.scale.x)
+						net.WriteFloat(entry.scale.y)
+						net.WriteFloat(entry.scale.z)
+					end
+				end
+			net.SendToServer()
+
+			//If the paste modified the bones of the currently selected entity, then update 
+			//all of the bonemanip controls to make sure they don't display out-of-date values
+			if modelent == panel.modellist.selectedent then
+				panel.UpdateBoneManipOptions()
+			end
+		end
+
+		return pastecount
+
+	end
+
+
+
 
 	function TOOL.BuildCPanel(panel)
 
@@ -1334,8 +1468,8 @@ if CLIENT then
 
 						end
 
-						//Copy
-						local option = menu:AddOption("Copy bone settings", function()
+						//Copy (all bones)
+						local option = menu:AddOption("Copy settings from all bones", function()
 							local copytab = {}
 
 							//Fix some bones not being copied and returning invalid (i.e. playermodel weapon bones)
@@ -1358,150 +1492,42 @@ if CLIENT then
 									entry.scaletarget = false
 								end
 
-								local entryid = modelent:GetBoneName(id)
-								//MsgN(id, " == ", entryid)
+								local bonename = modelent:GetBoneName(id)
+								//MsgN(id, " == ", bonename)
 								if id == -1 then
-									entryid = -1
+									bonename = -1
 								end
 
-								if entryid != "__INVALIDBONE__" then
-									copytab[entryid] = entry
+								if bonename != "__INVALIDBONE__" then
+									entry.bonename = bonename
+									table.insert(copytab, entry)
 								end
 							end
 							panel.modellist.copypasteinfo = copytab
 							//PrintTable(panel.modellist.copypasteinfo)
 
-							GAMEMODE:AddNotify("Copied " .. table.Count(copytab) .. " bones", NOTIFY_GENERIC, 2)
+							local name = "Copied " .. table.Count(copytab) .. " bones"
+							if table.Count(copytab) == 1 then name = "Copied " .. table.Count(copytab) .. " bone" end
+							GAMEMODE:AddNotify(name, NOTIFY_GENERIC, 2)
 							surface.PlaySound("ambient/water/drip" .. math.random(1, 4) .. ".wav")
 						end)
 						option:SetImage("icon16/page_copy.png")
 
-						//Paste
-						local option = menu:AddOption("Paste bone settings", function()
-							if !panel.modellist.copypasteinfo then return end
-							local serverinfo = {}
-							local parent = modelent:GetParent()
-							local pastecount = 0
-
-							for bonename, entry in pairs (panel.modellist.copypasteinfo) do
-								local id = modelent:LookupBone(bonename)
-								if bonename == -1 and modelent.AdvBone_BoneInfo and modelent:GetBoneName(0) != "static_prop" then id = -1 end //don't apply bone -1 to ents that don't have origin manips
-
-								if id then
-									//Compile information to be sent to the server for this bone
-									local serverentry = table.Copy(entry)
-									serverentry.id = id
-
-									//Only send manips to the server if the value has changed, otherwise there's no point
-									//Apply the manips clientside too, so that UpdateBoneManipOptions can get their values immediately
-									if serverentry.trans != modelent:GetManipulateBonePosition(id) then
-										modelent:ManipulateBonePosition(id, serverentry.trans)
-									else
-										serverentry.trans = nil
-									end
-									if serverentry.rot != modelent:GetManipulateBoneAngles(id) then
-										modelent:ManipulateBonePosition(id, serverentry.rot)
-									else
-										serverentry.rot = nil
-									end
-									if serverentry.scale != modelent:GetManipulateBoneScale(id) then
-										modelent:ManipulateBonePosition(id, serverentry.scale)
-									else
-										serverentry.scale = nil
-									end
-									
-									local targetbone_changed
-									local scaletarget_changed
-									if modelent.AdvBone_BoneInfo and modelent.AdvBone_BoneInfo[id] then
-										//Same thing with targetbone, don't send it to the server if the value hasn't changed
-										if modelent.AdvBone_BoneInfo[id].parent != entry.targetbone then
-											targetbone_changed = true
-										end
-										//And scaletarget - this one's a bit different since it'd be silly to network
-										//an "are we sending this" bool for a value that's already a bool, so we always
-										//send it as long as anything on this bone has changed
-										if modelent.AdvBone_BoneInfo[id].scale != entry.scaletarget then
-											scaletarget_changed = true
-										end
-										//Also apply the new BoneInfo clientside
-										modelent.AdvBone_BoneInfo[id] = {
-											parent = entry.targetbone,
-											scale = entry.scaletarget,
-										}
-									end
-									if !targetbone_changed then
-										serverentry.targetbone = nil
-									end
-
-									//Update visuals of list entries to show their new status
-									if modelent == panel.modellist.selectedent then
-										local targetboneid = -1
-										if entry.targetbone != "" and IsValid(parent) then targetboneid = parent:LookupBone(entry.targetbone) end
-										panel.bonelist.Bones[id].HasTargetBone = targetboneid != -1
-									end
-
-									//If nothing has changed for this bone, don't bother sending it to the server
-									if !(!scaletarget_changed and !serverentry.targetbone and !serverentry.trans and !serverentry.rot and !serverentry.scale) then
-										table.insert(serverinfo, serverentry)
-									end
-									//Still keep a count of the number of bones the paste applied to, even if nothing changed
-									pastecount = pastecount + 1
-								end
+						//Paste (by name)
+						local count = 0
+						if istable(panel.modellist.copypasteinfo) then count = #panel.modellist.copypasteinfo end
+						local name = "Paste " .. count .. " bone settings by name"
+						if count == 1 then name = "Paste " .. count .. " bone setting by name" end
+						local option = menu:AddOption(name, function()
+							local count = SendBoneManipPasteToServer(modelent, panel.modellist.copypasteinfo)
+							if count != nil then
+								local name = "Pasted " .. count .. " bones"
+								if count == 1 then name = "Pasted " .. count .. " bone" end
+								GAMEMODE:AddNotify(name, NOTIFY_GENERIC, 2)
+								surface.PlaySound("common/wpn_select.wav")
 							end
-
-							--[[MsgN("client info:")
-							PrintTable(panel.modellist.copypasteinfo)
-							MsgN("server info:")
-							PrintTable(serverinfo)]]
-
-							if table.Count(serverinfo) > 0 then //if none of the bones match then this will still be empty
-								//Then, send all of the information to the server so the duplicator can pick it up	
-								net.Start("AdvBone_BoneManipPaste_SendToSv")
-									net.WriteEntity(modelent)
-
-									net.WriteBool(engine.IsRecordingDemo())
-
-									net.WriteInt(table.Count(serverinfo), 9)
-									for _, entry in pairs (serverinfo) do
-										net.WriteInt(entry.id, 9)
-
-										net.WriteBool(entry.targetbone)
-										if entry.targetbone then
-											net.WriteString(entry.targetbone)
-										end
-										net.WriteBool(entry.scaletarget) //no "should we send this" bool for this one since it's already just a bool
-										
-										net.WriteBool(entry.trans)
-										if entry.trans then
-											net.WriteFloat(entry.trans.x) //send 3 floats instead of a vector, because net.WriteVector clobbers precise values
-											net.WriteFloat(entry.trans.y)
-											net.WriteFloat(entry.trans.z)
-										end
-										net.WriteBool(entry.rot)
-										if entry.rot then
-											net.WriteFloat(entry.rot.p)
-											net.WriteFloat(entry.rot.y)
-											net.WriteFloat(entry.rot.r)
-										end
-										net.WriteBool(entry.scale)
-										if entry.scale then
-											net.WriteFloat(entry.scale.x)
-											net.WriteFloat(entry.scale.y)
-											net.WriteFloat(entry.scale.z)
-										end
-									end
-								net.SendToServer()
-
-								//If the paste modified the bones of the currently selected entity, then update 
-								//all of the bonemanip controls to make sure they don't display out-of-date values
-								if modelent == panel.modellist.selectedent then
-									panel.UpdateBoneManipOptions()
-								end
-							end
-
-							GAMEMODE:AddNotify("Pasted " .. pastecount .. " bones", NOTIFY_GENERIC, 2)
-							surface.PlaySound("common/wpn_select.wav")
 						end)
+						option:SetEnabled(count > 0)
 						option:SetImage("icon16/page_paste.png")
 
 						local spacer = menu:AddSpacer()
@@ -2001,6 +2027,116 @@ if CLIENT then
 						img:SetImage("icon16/link.png")
 						img:SizeToContents()
 						img:Dock(RIGHT)
+					end
+
+					//Right Click: Show a dropdown menu with individual bone copy/paste options
+					line.OnRightClick = function()
+						if !IsValid(ent) then return end
+						local menu = DermaMenu()
+
+						local boneids = panel.bonelist:GetSelected()
+
+						//Copy (from JUST the selected bone(s), not the whole model)
+						local name = "Copy settings from " .. #boneids .. " selected bones"
+						if #boneids == 1 then name = "Copy settings from " .. #boneids .. " selected bone" end
+						local option = menu:AddOption(name, function()
+							local copytab = {}
+
+							//Fix some bones not being copied and returning invalid (i.e. playermodel weapon bones)
+							ent:SetupBones()
+							ent:InvalidateBoneCache()
+
+							local bonecountmin = -1
+							for k, line in pairs (boneids) do
+								local entry = {}
+
+								entry.trans = ent:GetManipulateBonePosition(line.id)
+								entry.rot = ent:GetManipulateBoneAngles(line.id)
+								entry.scale = ent:GetManipulateBoneScale(line.id)
+								if ent.AdvBone_BoneInfo and ent.AdvBone_BoneInfo[line.id] then
+									entry.targetbone = ent.AdvBone_BoneInfo[line.id].parent
+									entry.scaletarget = ent.AdvBone_BoneInfo[line.id].scale
+								else
+									entry.targetbone = ""
+									entry.scaletarget = false
+								end
+
+								local bonename = ent:GetBoneName(line.id)
+								//MsgN(line.id, " == ", bonename)
+								if line.id == -1 then
+									bonename = -1
+								end
+
+								if bonename != "__INVALIDBONE__" then
+									entry.bonename = bonename
+									table.insert(copytab, entry)
+								end
+							end
+							panel.modellist.copypasteinfo = copytab
+							//PrintTable(panel.modellist.copypasteinfo)
+
+							local name = "Copied " .. table.Count(copytab) .. " bones"
+							if table.Count(copytab) == 1 then name = "Copied " .. table.Count(copytab) .. " bone" end
+							GAMEMODE:AddNotify(name, NOTIFY_GENERIC, 2)
+							surface.PlaySound("ambient/water/drip" .. math.random(1, 4) .. ".wav")
+						end)
+						option:SetImage("icon16/page_copy.png")
+
+						//Paste (by selection, not by name)
+						local count = 0
+						if istable(panel.modellist.copypasteinfo) then count = #panel.modellist.copypasteinfo end
+						local name = "Paste " .. count .. " bone settings to " .. #boneids ..  " selected bones"
+						if count == 1 and #boneids == 1 then
+							name = "Paste " .. count .. " bone setting to " .. #boneids ..  " selected bone"
+						elseif count == 1 then
+							name = "Paste " .. count .. " bone setting to " .. #boneids ..  " selected bones"
+						elseif #boneids == 1 then
+							name = "Paste " .. count .. " bone settings to " .. #boneids ..  " selected bone"
+						end
+						local option = menu:AddOption(name, function()
+							local copy_index = 1
+							local pastetab = {}
+
+							//Fix some bones not being copied and returning invalid (i.e. playermodel weapon bones)
+							ent:SetupBones()
+							ent:InvalidateBoneCache()
+
+							//How this works:
+							//The intended use of this feature is to allow the user to A: copy the settings of 1 bone to 1 other bone,
+							//B: copy the settings of 1 bone to multiple other bones, or C: copy the settings of a set of bones to 
+							//another same-sized set (i.e. copying the settings from all the left fingers to all the right fingers). 
+							//However, the way we built this works with either set being any size, so we can also, say, copy just 2 
+							//bones to a big set of bones (bone 1 gets copy 1, bone 2 gets copy 2, then bone 3 gets copy 1 again, and 
+							//so on), or copy a big set of bones to just a few (bone 1 gets copy 1, and so on until we run out of bones 
+							//to copy to, leaving the rest of the copies unused)
+
+							for k, line in pairs (boneids) do
+								local bonename = ent:GetBoneName(line.id)
+								//MsgN(line.id, " == ", bonename)
+								if line.id == -1 then
+									bonename = -1
+								end
+
+								local entry = table.Copy(panel.modellist.copypasteinfo[copy_index])
+								entry.bonename = bonename
+								table.insert(pastetab, entry)
+
+								copy_index = copy_index + 1
+								if copy_index > count then copy_index = 1 end
+							end
+
+							local count = SendBoneManipPasteToServer(ent, pastetab)
+							if count != nil then
+								local name = "Pasted " .. count .. " bones"
+								if count == 1 then name = "Pasted " .. count .. " bone" end
+								GAMEMODE:AddNotify(name, NOTIFY_GENERIC, 2)
+								surface.PlaySound("common/wpn_select.wav")
+							end
+						end)
+						option:SetEnabled(count > 0)
+						option:SetImage("icon16/page_paste.png")
+						
+						menu:Open()
 					end
 				end
 
