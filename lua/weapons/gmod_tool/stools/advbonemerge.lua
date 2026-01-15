@@ -649,33 +649,72 @@ if SERVER then
 end
 
 
-
+//We allow 10 frames as the client based on the 10 frames until buildbonepositions falls asleep. 
+//This can be tuned to observe various effects
+local BONE_CHANGE_FRAMES = 10
 
 //note 10/15/14: this is now duplicated code in both advbone and animpropoverhaul, lame
 //(used by cpanel options to wake up buildbonepositions now that bonemanips don't always do that)
 if SERVER then
 
 	util.AddNetworkString("AdvBone_ResetBoneChangeTime_SendToCl")
+	util.AddNetworkString("AdvBone_UpdateBoneAsleep_SendToSv")
+
+	net.Receive("AdvBone_UpdateBoneAsleep_SendToSv", function()
+		local ent = net.ReadEntity()
+		ent.AdvBone_BonesAsleep = true
+	end)
 
 	AdvBone_ResetBoneChangeTime = function(ent)
 		//Limit how often the server sends this to clients; i don't know of any obvious cases where this would happen a lot like AdvBone_ResetBoneChangeTimeOnChildren does from manips
 		//or stop motion helper, but let's be safe here
 		local time = CurTime()
+		if ent.AdvBone_BonesAsleep == nil then
+			ent.AdvBone_BonesAsleep = true
+		end
 		ent.AdvBone_ResetBoneChangeTime_LastSent = ent.AdvBone_ResetBoneChangeTime_LastSent or 0
-		if time > ent.AdvBone_ResetBoneChangeTime_LastSent then
+		if time > ent.AdvBone_ResetBoneChangeTime_LastSent and ent.AdvBone_BonesAsleep then
+			ent.AdvBone_BonesAsleep = false
 			ent.AdvBone_ResetBoneChangeTime_LastSent = time
 			net.Start("AdvBone_ResetBoneChangeTime_SendToCl", true)
 				net.WriteEntity(ent)
 			net.Broadcast()
+			timer.Simple(BONE_CHANGE_FRAMES * FrameTime(), function()
+				//We don't want the client to always control when the bones will be asleep.
+				//Fallback to using the server to set this in case. As a note, the client's
+				//framerate is always faster than the server, so this timer will always set
+				//the booleans late, unless the client hangs up and doesn't send it in time.
+				ent.AdvBone_BonesAsleep = true
+			end)
 		end
 	end
 
 else
-
+	local function sendBoneAsleep(ent)
+		net.Start("AdvBone_UpdateBoneAsleep_SendToSv", true)
+			net.WriteEntity(ent)
+		net.SendToServer()
+	end
+	
 	net.Receive("AdvBone_ResetBoneChangeTime_SendToCl", function()
 		local ent = net.ReadEntity()
 		if IsValid(ent) then
 			ent.LastBoneChangeTime = CurTime()
+			local count = 0
+			local timerName = "AdvBone_SendBoneAsleepTimer_" .. tostring(ent:EntIndex())
+			timer.Create(timerName, FrameTime(), -1, function()
+				count = count + 1
+				if count >= BONE_CHANGE_FRAMES then
+					timer.Remove(timerName)
+					sendBoneAsleep(ent)
+				else
+					//To ensure that our timer runs with the client's framerate, we need to 
+					//adjust the timer  to the last frame render time. This isn't accurate as 
+					//it doesn't time the true frame render delay for the next frame, but it 
+					//is controlled by our framerate nonetheless. 
+					timer.Adjust(timerName, FrameTime())
+				end
+			end)
 		end
 	end)
 
