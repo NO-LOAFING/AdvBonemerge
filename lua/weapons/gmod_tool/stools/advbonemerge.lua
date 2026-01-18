@@ -462,55 +462,109 @@ end
 
 
 
-function TOOL:DrawHUD()
+if CLIENT then
 
-	local panel = controlpanel.Get("advbonemerge")
-	if !panel or !panel.bonelist then return end
-	local ent = self:GetWeapon():GetNWEntity("AdvBone_CurEntity")
-	local bonemanipent = panel.modellist.selectedent
+	local colorborder = Color(0,0,0,255)
+	local colorselect = Color(0,255,0,255)
+	local colorunselect = Color(255,255,255,255)
+	local cv_halo //the convar won't exist until a bit later, when the toolgun code reads the TOOL.ClientConVar tab and creates them, so don't cache the convar until after we've selected an ent
 
-	if IsValid(ent) then
-		//Draw a halo around the entity we're manipulating the bones of
-		if self:GetClientNumber("drawhalo") == 1 then
-			local animcolor = 189 + math.cos(RealTime() * 4) * 17
+	hook.Add("HUDPaint", "AdvBone_HUDPaint_ToolSelection", function()
 
-			if ent.AttachedEntity then ent = ent.AttachedEntity end
-
-			if IsValid(bonemanipent) and ent != bonemanipent then
-				halo.Add({bonemanipent}, Color(animcolor, 255, animcolor, 255), 2.3, 2.3, 1, true, false)
-			else
-				halo.Add({ent}, Color(255, 255, animcolor, 255), 2.3, 2.3, 1, true, false)
-			end
+		local panel = controlpanel.Get("advbonemerge")
+		if !panel or !panel.bonelist then return end
+		local ent = LocalPlayer():GetWeapon("gmod_tool")
+		if IsValid(ent) then
+			ent = ent:GetNWEntity("AdvBone_CurEntity")
 		end
+		local bonemanipent = panel.modellist.selectedent
 
-		//Draw the name and position of the selected bones
-		if !IsValid(bonemanipent) then return end
-		for _, line in pairs (panel.bonelist:GetSelected()) do
-			local _pos = nil
-			local _name = ""
+		if IsValid(ent) then
+			local hov = vgui:GetHoveredPanel()
 
-			if line.id == -1 then
-				_pos = bonemanipent:GetPos()
-				_name = "(origin)"
-			else
-				local matr = bonemanipent:GetBoneMatrix(line.id)
-				if matr then 
-					_pos = matr:GetTranslation() 
+			cv_halo = cv_halo or GetConVar("advbonemerge_drawhalo")
+			if cv_halo and cv_halo:GetBool() then
+				//Draw a halo around the entity we're manipulating the bones of
+				local animcolor = 189 + math.cos(RealTime() * 4) * 17
+				if ent.AttachedEntity then ent = ent.AttachedEntity end
+				if IsValid(bonemanipent) and ent != bonemanipent then
+					halo.Add({bonemanipent}, Color(animcolor, 255, animcolor, 255), 2.3, 2.3, 1, true, false)
 				else
-					_pos = bonemanipent:GetBonePosition(line.id) 
+					halo.Add({ent}, Color(255, 255, animcolor, 255), 2.3, 2.3, 1, true, false)
 				end
-				_name = bonemanipent:GetBoneName(line.id)
+
+				//Also, if we're hovering over an entity in the modellist, draw a
+				//different halo around it (much more visible, copied from context menu)
+				if IsValid(hov) and IsValid(hov.AdvBone_EntHoverData) then
+					local c = Color( 255, 255, 255, 255 )
+					c.r = 200 + math.sin( RealTime() * 50 ) * 55
+					c.g = 200 + math.sin( RealTime() * 20 ) * 55
+					c.b = 200 + math.cos( RealTime() * 60 ) * 55
+					halo.Add( {hov.AdvBone_EntHoverData}, c, 2, 2, 2, true, false )
+				end
 			end
 
-			if !_pos then continue end
-			local _pos = _pos:ToScreen()
-			local textpos = {x = _pos.x+5,y = _pos.y-5}
+			//If we're hovering over an unselected bone in the bonelist or targetbonelist, draw 
+			//its name and position; do this first so that the selected bones draw on top of it
+			if IsValid(hov) and istable(hov.AdvBone_BoneHoverData) then
+				if IsValid(hov.AdvBone_BoneHoverData.ent) and hov.AdvBone_BoneHoverData.id != nil then
+					local _pos = nil
+					local _name = ""
 
-			draw.RoundedBox(0,_pos.x - 2,_pos.y - 2,4,4,Color(0,0,0,255))
-			draw.RoundedBox(0,_pos.x - 1,_pos.y - 1,2,2,Color(255,255,255,255))
-			draw.SimpleTextOutlined(_name,"Default",textpos.x,textpos.y,Color(255,255,255,255),TEXT_ALIGN_LEFT,TEXT_ALIGN_BOTTOM,1,Color(0,0,0,255))
+					if hov.AdvBone_BoneHoverData.id == -1 then
+						_pos = hov.AdvBone_BoneHoverData.ent:GetPos()
+						_name = "(origin)"
+					else
+						local matr = hov.AdvBone_BoneHoverData.ent:GetBoneMatrix(hov.AdvBone_BoneHoverData.id)
+						if matr then 
+							_pos = matr:GetTranslation() 
+						else
+							_pos = hov.AdvBone_BoneHoverData.ent:GetBonePosition(hov.AdvBone_BoneHoverData.id) 
+						end
+						_name = hov.AdvBone_BoneHoverData.ent:GetBoneName(hov.AdvBone_BoneHoverData.id)
+					end
+
+					if _pos then
+						local _pos = _pos:ToScreen()
+						local textpos = {x = _pos.x+5,y = _pos.y-5}
+						
+						draw.RoundedBox(0,_pos.x - 2,_pos.y - 2,4,4,colorborder)
+						draw.RoundedBox(0,_pos.x - 1,_pos.y - 1,2,2,colorunselect)
+						draw.SimpleTextOutlined(_name,"Default",textpos.x,textpos.y,colorunselect,TEXT_ALIGN_LEFT,TEXT_ALIGN_BOTTOM,1,colorborder)
+					end
+				end
+			end
+
+			//Draw the name and position of all bones currently selected in the bonelist
+			if !IsValid(bonemanipent) then return end
+			for _, line in pairs (panel.bonelist:GetSelected()) do
+				local _pos = nil
+				local _name = ""
+
+				if line.id == -1 then
+					_pos = bonemanipent:GetPos()
+					_name = "(origin)"
+				else
+					local matr = bonemanipent:GetBoneMatrix(line.id)
+					if matr then 
+						_pos = matr:GetTranslation() 
+					else
+						_pos = bonemanipent:GetBonePosition(line.id) 
+					end
+					_name = bonemanipent:GetBoneName(line.id)
+				end
+
+				if !_pos then continue end
+				local _pos = _pos:ToScreen()
+				local textpos = {x = _pos.x+5,y = _pos.y-5}
+
+				draw.RoundedBox(0,_pos.x - 3,_pos.y - 3,6,6,colorborder)
+				draw.RoundedBox(0,_pos.x - 1,_pos.y - 1,2,2,colorselect)
+				draw.SimpleTextOutlined(_name,"Default",textpos.x,textpos.y,colorselect,TEXT_ALIGN_LEFT,TEXT_ALIGN_BOTTOM,2,colorborder)
+			end
 		end
-	end
+
+	end)
 
 end
 
@@ -1939,6 +1993,8 @@ if CLIENT then
 					table.insert(panel.modellist.AllNodes, modelent:EntIndex(), node)
 					if !panel.modellist.TopNode then panel.modellist.TopNode = node end
 
+					node.Label.AdvBone_EntHoverData = modelent //info for on-hover check in HUDPaint; all it needs at the moment is the ent, so this doesn't need to be a table
+
 
 					////If our modelent is a prop_effect, then stop using the attachedentity now and go back to the parent ent
 					//local parent = modelent:GetParent()
@@ -2018,6 +2074,10 @@ if CLIENT then
 					panel.bonelist.Bones[id] = line
 					line.id = id
 					firstline = firstline or line
+					line.AdvBone_BoneHoverData = { //info for on-hover check in HUDPaint
+						id = id,
+						ent = ent
+					}
 
 					local selectedtargetbone = -1
 					if ent.AdvBone_BoneInfo and ent.AdvBone_BoneInfo[id] then
@@ -2240,6 +2300,7 @@ if CLIENT then
     			surface.DrawRect(0, 0, panel.bonemanipcontainer:GetWide(), panel.bonemanipcontainer:GetTall())
 		end
 		panel.bonemanipcontainer.Header:SetTall(0)
+		panel.bonemanipcontainer:DockPadding(0,0,0,10) //add extra padding to the bottom of the container, so that the bottom checkbox isn't right up against the edge
 		panel:AddPanel(panel.bonemanipcontainer)
 
 		panel.UpdatingBoneManipOptions = false
@@ -2560,9 +2621,19 @@ if CLIENT then
 			self.Menu = DermaMenu( false, self )
 
 			//only this block is meaningfully changed
+			local ent = panel.modellist.selectedent
+			if IsValid(ent) then ent = ent:GetParent() end
+			if IsValid(ent) and ent.AttachedEntity then ent = ent.AttachedEntity end
 			for k, v in pairs (self.Choices) do
 				local option = self.Menu:AddOption( v, function() self:ChooseOption( v, k ) end )
 				if panel.targetbonelist.selectedtargetbone == self.Data[k] then option:SetChecked(true) end  //check the currently selected target bone
+				
+				if self.Data[k] >= 0 then //don't show for "(none)" option
+					option.AdvBone_BoneHoverData = { //info for on-hover check in HUDPaint
+						id = self.Data[k],
+						ent = ent
+					}
+				end
 			end
 
 			local x, y = self:LocalToScreen( 0, self:GetTall() )
@@ -2759,7 +2830,7 @@ if CLIENT then
 			end
 		end
 
-		local checkbox = panel:AddControl("Checkbox", {Label = "List bones in hierarchical order", Command = "advbonemerge_bone_hierarchy"}) //TODO: bad label? is hierarchical too complex a word?
+		local checkbox = panel:AddControl("Checkbox", {Label = "Display bone list as hierarchy", Command = "advbonemerge_bone_hierarchy"})
 		checkbox.OnChange = BonelistUpdateAppearance
 
 		local checkbox = panel:AddControl("Checkbox", {Label = "Show bone ID numbers", Command = "advbonemerge_bone_ids"})
