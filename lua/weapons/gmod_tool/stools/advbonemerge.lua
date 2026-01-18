@@ -5,6 +5,8 @@ TOOL.ConfigName = ""
 
 TOOL.ClientConVar.matchnames = "1"
 TOOL.ClientConVar.drawhalo = "1"
+TOOL.ClientConVar.bone_hierarchy = "1"
+TOOL.ClientConVar.bone_ids = "1"
 
 TOOL.Information = {
 	{name = "info1", stage = 1, icon = "gui/info.png"},
@@ -1476,31 +1478,58 @@ if CLIENT then
 							modelent:SetupBones()
 							modelent:InvalidateBoneCache()
 
-							local bonecountmin = -1
-							if !modelent.AdvBone_BoneInfo or modelent:GetBoneName(0) == "static_prop" then bonecountmin = 0 end  //don't get bone -1 from ents that don't have origin manips
-							for id = bonecountmin, modelent:GetBoneCount() - 1 do
-								local entry = {}
-
-								entry.trans = modelent:GetManipulateBonePosition(id)
-								entry.rot = modelent:GetManipulateBoneAngles(id)
-								entry.scale = modelent:GetManipulateBoneScale(id)
-								if modelent.AdvBone_BoneInfo and modelent.AdvBone_BoneInfo[id] then
-									entry.targetbone = modelent.AdvBone_BoneInfo[id].parent
-									entry.scaletarget = modelent.AdvBone_BoneInfo[id].scale
-								else
-									entry.targetbone = ""
-									entry.scaletarget = false
-								end
-
+							local function CopyBone(id)
 								local bonename = modelent:GetBoneName(id)
 								//MsgN(id, " == ", bonename)
 								if id == -1 then
 									bonename = -1
 								end
-
 								if bonename != "__INVALIDBONE__" then
+									local entry = {}
+
+									entry.trans = modelent:GetManipulateBonePosition(id)
+									entry.rot = modelent:GetManipulateBoneAngles(id)
+									entry.scale = modelent:GetManipulateBoneScale(id)
+									if modelent.AdvBone_BoneInfo and modelent.AdvBone_BoneInfo[id] then
+										entry.targetbone = modelent.AdvBone_BoneInfo[id].parent
+										entry.scaletarget = modelent.AdvBone_BoneInfo[id].scale
+									else
+										entry.targetbone = ""
+										entry.scaletarget = false
+									end
+
 									entry.bonename = bonename
 									table.insert(copytab, entry)
+
+									return true
+								end
+							end
+
+							if modelent.AdvBone_BoneInfo and modelent:GetBoneName(0) != "static_prop" then
+								CopyBone(-1)
+							end
+
+							if !GetConVar("advbonemerge_bone_hierarchy"):GetBool() then
+								for id = 0, modelent:GetBoneCount() - 1 do
+									CopyBone(id)
+								end
+							else
+								//If we're displaying bones in hierarchical order, then we should also be *copying* them in
+								//hierarchical order, so that pasting the settings via selection matches the order they're 
+								//listed in (like it does when they're in numerical order)
+								local function CopyBonesInHierarchy(id)
+									local name = modelent:GetBoneName(id)
+									if CopyBone(id) then
+										for _, v in ipairs (modelent:GetChildBones(id)) do
+											CopyBonesInHierarchy(v)
+										end
+									end
+								end
+								for id = 0, modelent:GetBoneCount() - 1 do
+									local id2 = modelent:GetBoneParent(id) 
+									if id2 == nil or id2 < 0 then
+										CopyBonesInHierarchy(id)
+									end
 								end
 							end
 							panel.modellist.copypasteinfo = copytab
@@ -2141,20 +2170,56 @@ if CLIENT then
 				end
 
 				//AdvBone ents should have an additional control for the model origin, unless they're a "static_prop" model and don't support it (see ent_advbonemerge think function)
+				local has_origin_manip
 				if ent.AdvBone_BoneInfo and ent:GetBoneName(0) != "static_prop" then
+					local name = "(origin)"
+					if GetConVar("advbonemerge_bone_ids"):GetBool() then name = "-1: " .. name end
 					AddBone("(origin)", -1)
+					has_origin_manip = true
 				end
 
-				for id = 0, ent:GetBoneCount() - 1 do
-					local name = ent:GetBoneName(id)
-					if name != "__INVALIDBONE__" then
-						AddBone(name, id)
+				if !GetConVar("advbonemerge_bone_hierarchy"):GetBool() then
+					for id = 0, ent:GetBoneCount() - 1 do
+						local name = ent:GetBoneName(id)
+						if name != "__INVALIDBONE__" then
+							if GetConVar("advbonemerge_bone_ids"):GetBool() then name = id .. ": " .. name end
+							AddBone(name, id)
+						end
+					end
+				else
+					local function AddBonesInHierarchy(id, lvl)
+						local indent = ""
+						for i = 1, lvl do
+							indent = indent .. "  "
+						end
+						local name = ent:GetBoneName(id)
+						if name != "__INVALIDBONE__" then
+							if GetConVar("advbonemerge_bone_ids"):GetBool() then name = id .. ": " .. name end
+							AddBone(indent .. name, id)
+
+							for _, v in ipairs (ent:GetChildBones(id)) do
+								AddBonesInHierarchy(v, lvl + 1)
+							end
+						end
+					end
+					for id = 0, ent:GetBoneCount() - 1 do
+						local id2 = ent:GetBoneParent(id) 
+						if id2 == nil or id2 < 0 then
+							local lvl = 0
+							if has_origin_manip then lvl = 1 end
+							AddBonesInHierarchy(id, lvl)
+						end
 					end
 				end
 
 				if firstline then 
 					panel.bonelist:SelectItem(firstline)
 				end
+
+				//indents and id numbers both completely break alphabetical sorting; this wasn't even 
+				//an intended feature at all, but i'm not turning it off completely because you just 
+				//know there's *someone* out there who's made it an integral part of their workflow.
+				panel.bonelist:SetSortable(!GetConVar("advbonemerge_bone_hierarchy"):GetBool() and !GetConVar("advbonemerge_bone_ids"):GetBool())
 			else
 				//Add a placeholder line explaining why the list is empty
 				local line = panel.bonelist:AddLine("(select a model above to edit its bones)")
@@ -2426,9 +2491,35 @@ if CLIENT then
 			panel.targetbonelist:AddChoice(nonetext, -1, (selectedtargetbone == -1))
 
 			if IsValid(parent) and parent:GetBoneCount() and parent:GetBoneCount() != 0 then
-				for id = 0, parent:GetBoneCount() - 1 do
-					if parent:GetBoneName(id) != "__INVALIDBONE__" then
-						panel.targetbonelist:AddChoice(parent:GetBoneName(id), id, (selectedtargetbone == id))
+				if !GetConVar("advbonemerge_bone_hierarchy"):GetBool() then
+					for id = 0, parent:GetBoneCount() - 1 do
+						local name = parent:GetBoneName(id)
+						if name != "__INVALIDBONE__" then
+							if GetConVar("advbonemerge_bone_ids"):GetBool() then name = id .. ": " .. name end
+							panel.targetbonelist:AddChoice(name, id, (selectedtargetbone == id))
+						end
+					end
+				else
+					local function AddBonesInHierarchy(id, lvl)
+						local indent = ""
+						for i = 1, lvl do
+							indent = indent .. "  "
+						end
+						local name = parent:GetBoneName(id)
+						if name != "__INVALIDBONE__" then
+							if GetConVar("advbonemerge_bone_ids"):GetBool() then name = id .. ": " .. name end
+							panel.targetbonelist:AddChoice(indent .. name, id, (selectedtargetbone == id))
+
+							for _, v in ipairs (parent:GetChildBones(id)) do
+								AddBonesInHierarchy(v, lvl + 1)
+							end
+						end
+					end
+					for id = 0, parent:GetBoneCount() - 1 do
+						local id2 = parent:GetBoneParent(id) 
+						if id2 == nil or id2 < 0 then
+							AddBonesInHierarchy(id, 0)
+						end
 					end
 				end
 			end
@@ -2444,9 +2535,13 @@ if CLIENT then
 					panel.bonelist.Bones[line.id].HasTargetBone = data != -1
 				end
 			end
-		end
 
-		//Modified OpenMenu fuction to display menu items in bone ID (data value) order
+			//Don't show indents in selected bone name
+			panel.targetbonelist:SetText(string.TrimLeft(value))
+		end
+		panel.targetbonelist:SetSortItems(false)
+
+		//Modified OpenMenu fuction to check the currently selected bone
 		panel.targetbonelist.OpenMenu = function(self, pControlOpener)
 			if ( pControlOpener && pControlOpener == self.TextEntry ) then
 				return
@@ -2464,11 +2559,10 @@ if CLIENT then
 
 			self.Menu = DermaMenu( false, self )
 
-
-
-			for k, v in SortedPairs( self.Choices ) do
+			//only this block is meaningfully changed
+			for k, v in pairs (self.Choices) do
 				local option = self.Menu:AddOption( v, function() self:ChooseOption( v, k ) end )
-				if panel.targetbonelist.selectedtargetbone == (k - 2) then option:SetChecked(true) end  //check the currently selected target bone
+				if panel.targetbonelist.selectedtargetbone == self.Data[k] then option:SetChecked(true) end  //check the currently selected target bone
 			end
 
 			local x, y = self:LocalToScreen( 0, self:GetTall() )
@@ -2644,6 +2738,33 @@ if CLIENT then
 		//panel:ControlHelp("If enabled. newly attached models start off with all bones following the parent model's bones with matching names, like a normal bonemerge.")
 		panel:ControlHelp("If on. newly attached models start off with all bones following the bones with matching names, like a normal bonemerge.")
 
+
+
+		panel:AddControl("Label", {Text = ""})
+
+
+		
+		local function BonelistUpdateAppearance()
+			//Compile a list of all currently selected bones that will persist after the update
+			local tab = {}
+			for k, line in pairs (panel.bonelist:GetSelected()) do
+				tab[line.id] = true
+			end
+			//Update the bonelist, to change the order the bones are displayed in and/or update their display names
+			panel.bonelist.PopulateBoneList()
+			//Now restore the selected bones
+			panel.bonelist:ClearSelection()
+			for k, line in pairs (panel.bonelist:GetLines()) do
+				if tab[line.id] then panel.bonelist:SelectItem(line) end
+			end
+		end
+
+		local checkbox = panel:AddControl("Checkbox", {Label = "List bones in hierarchical order", Command = "advbonemerge_bone_hierarchy"}) //TODO: bad label? is hierarchical too complex a word?
+		checkbox.OnChange = BonelistUpdateAppearance
+
+		local checkbox = panel:AddControl("Checkbox", {Label = "Show bone ID numbers", Command = "advbonemerge_bone_ids"})
+		checkbox.OnChange = BonelistUpdateAppearance
+		
 		panel:AddControl("Checkbox", {Label = "Draw selection halo", Command = "advbonemerge_drawhalo"})
 
 	end
