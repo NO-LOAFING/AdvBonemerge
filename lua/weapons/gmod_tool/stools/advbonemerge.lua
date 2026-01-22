@@ -471,100 +471,101 @@ if CLIENT then
 	local cv_halo //the convar won't exist until a bit later, when the toolgun code reads the TOOL.ClientConVar tab and creates them, so don't cache the convar until after we've selected an ent
 
 	hook.Add("HUDPaint", "AdvBone_HUDPaint_ToolSelection", function()
-
-		local panel = controlpanel.Get("advbonemerge")
-		if !panel or !panel.bonelist then return end
-		local ent = LocalPlayer():GetWeapon("gmod_tool")
-		if IsValid(ent) then
-			ent = ent:GetNWEntity("AdvBone_CurEntity")
-		end
-		local bonemanipent = panel.modellist.selectedent
-
-		if IsValid(ent) then
-			local hov = vgui:GetHoveredPanel()
-
-			cv_halo = cv_halo or GetConVar("advbonemerge_drawhalo")
-			if cv_halo and cv_halo:GetBool() then
-				//Draw a halo around the entity we're manipulating the bones of
-				local animcolor = 189 + math.cos(RealTime() * 4) * 17
-				if ent.AttachedEntity then ent = ent.AttachedEntity end
-				if IsValid(bonemanipent) and ent != bonemanipent then
-					halo.Add({bonemanipent}, Color(animcolor, 255, animcolor, 255), 2.3, 2.3, 1, true, false)
-				else
-					halo.Add({ent}, Color(255, 255, animcolor, 255), 2.3, 2.3, 1, true, false)
-				end
-
-				//Also, if we're hovering over an entity in the modellist, draw a
-				//different halo around it (much more visible, copied from context menu)
-				if IsValid(hov) and IsValid(hov.AdvBone_EntHoverData) then
-					local c = Color( 255, 255, 255, 255 )
-					c.r = 200 + math.sin( RealTime() * 50 ) * 55
-					c.g = 200 + math.sin( RealTime() * 20 ) * 55
-					c.b = 200 + math.cos( RealTime() * 60 ) * 55
-					halo.Add( {hov.AdvBone_EntHoverData}, c, 2, 2, 2, true, false )
-				end
+		if g_ContextMenu and g_ContextMenu:IsVisible() then
+			local panel = controlpanel.Get("advbonemerge")
+			if !panel or !panel.bonelist then return end
+			local ent = LocalPlayer():GetWeapon("gmod_tool")
+			if IsValid(ent) then
+				if ent:GetMode() != "advbonemerge" then return end
+				ent = ent:GetNWEntity("AdvBone_CurEntity")
 			end
+			local bonemanipent = panel.modellist.selectedent
 
-			//If we're hovering over an unselected bone in the bonelist or targetbonelist, draw 
-			//its name and position; do this first so that the selected bones draw on top of it
-			if IsValid(hov) and istable(hov.AdvBone_BoneHoverData) then
-				if IsValid(hov.AdvBone_BoneHoverData.ent) and hov.AdvBone_BoneHoverData.id != nil then
+			if IsValid(ent) then
+				local hov = vgui:GetHoveredPanel()
+
+				cv_halo = cv_halo or GetConVar("advbonemerge_drawhalo")
+				if cv_halo and cv_halo:GetBool() then
+					//Draw a halo around the entity we're manipulating the bones of
+					local animcolor = 189 + math.cos(RealTime() * 4) * 17
+					if ent.AttachedEntity then ent = ent.AttachedEntity end
+					if IsValid(bonemanipent) and ent != bonemanipent then
+						halo.Add({bonemanipent}, Color(animcolor, 255, animcolor, 255), 2.3, 2.3, 1, true, false)
+					else
+						halo.Add({ent}, Color(255, 255, animcolor, 255), 2.3, 2.3, 1, true, false)
+					end
+
+					//Also, if we're hovering over an entity in the modellist, draw a
+					//different halo around it (much more visible, copied from context menu)
+					if IsValid(hov) and IsValid(hov.AdvBone_EntHoverData) then
+						local c = Color( 255, 255, 255, 255 )
+						c.r = 200 + math.sin( RealTime() * 50 ) * 55
+						c.g = 200 + math.sin( RealTime() * 20 ) * 55
+						c.b = 200 + math.cos( RealTime() * 60 ) * 55
+						halo.Add( {hov.AdvBone_EntHoverData}, c, 2, 2, 2, true, false )
+					end
+				end
+
+				//If we're hovering over an unselected bone in the bonelist or targetbonelist, draw 
+				//its name and position; do this first so that the selected bones draw on top of it
+				if IsValid(hov) and istable(hov.AdvBone_BoneHoverData) then
+					if IsValid(hov.AdvBone_BoneHoverData.ent) and hov.AdvBone_BoneHoverData.id != nil then
+						local _pos = nil
+						local _name = ""
+
+						if hov.AdvBone_BoneHoverData.id == -1 then
+							_pos = hov.AdvBone_BoneHoverData.ent:GetPos()
+							_name = "(origin)"
+						else
+							local matr = hov.AdvBone_BoneHoverData.ent:GetBoneMatrix(hov.AdvBone_BoneHoverData.id)
+							if matr then 
+								_pos = matr:GetTranslation() 
+							else
+								_pos = hov.AdvBone_BoneHoverData.ent:GetBonePosition(hov.AdvBone_BoneHoverData.id) 
+							end
+							_name = hov.AdvBone_BoneHoverData.ent:GetBoneName(hov.AdvBone_BoneHoverData.id)
+						end
+
+						if _pos then
+							local _pos = _pos:ToScreen()
+							local textpos = {x = _pos.x+5,y = _pos.y-5}
+							
+							draw.RoundedBox(0,_pos.x - 2,_pos.y - 2,4,4,colorborder)
+							draw.RoundedBox(0,_pos.x - 1,_pos.y - 1,2,2,colorunselect)
+							draw.SimpleTextOutlined(_name,"Default",textpos.x,textpos.y,colorunselect,TEXT_ALIGN_LEFT,TEXT_ALIGN_BOTTOM,1,colorborder)
+						end
+					end
+				end
+
+				//Draw the name and position of all bones currently selected in the bonelist
+				if !IsValid(bonemanipent) then return end
+				for _, line in pairs (panel.bonelist:GetSelected()) do
 					local _pos = nil
 					local _name = ""
 
-					if hov.AdvBone_BoneHoverData.id == -1 then
-						_pos = hov.AdvBone_BoneHoverData.ent:GetPos()
+					if line.id == -1 then
+						_pos = bonemanipent:GetPos()
 						_name = "(origin)"
 					else
-						local matr = hov.AdvBone_BoneHoverData.ent:GetBoneMatrix(hov.AdvBone_BoneHoverData.id)
+						local matr = bonemanipent:GetBoneMatrix(line.id)
 						if matr then 
 							_pos = matr:GetTranslation() 
 						else
-							_pos = hov.AdvBone_BoneHoverData.ent:GetBonePosition(hov.AdvBone_BoneHoverData.id) 
+							_pos = bonemanipent:GetBonePosition(line.id) 
 						end
-						_name = hov.AdvBone_BoneHoverData.ent:GetBoneName(hov.AdvBone_BoneHoverData.id)
+						_name = bonemanipent:GetBoneName(line.id)
 					end
 
-					if _pos then
-						local _pos = _pos:ToScreen()
-						local textpos = {x = _pos.x+5,y = _pos.y-5}
-						
-						draw.RoundedBox(0,_pos.x - 2,_pos.y - 2,4,4,colorborder)
-						draw.RoundedBox(0,_pos.x - 1,_pos.y - 1,2,2,colorunselect)
-						draw.SimpleTextOutlined(_name,"Default",textpos.x,textpos.y,colorunselect,TEXT_ALIGN_LEFT,TEXT_ALIGN_BOTTOM,1,colorborder)
-					end
+					if !_pos then continue end
+					local _pos = _pos:ToScreen()
+					local textpos = {x = _pos.x+5,y = _pos.y-5}
+
+					draw.RoundedBox(0,_pos.x - 3,_pos.y - 3,6,6,colorborder)
+					draw.RoundedBox(0,_pos.x - 1,_pos.y - 1,2,2,colorselect)
+					draw.SimpleTextOutlined(_name,"Default",textpos.x,textpos.y,colorselect,TEXT_ALIGN_LEFT,TEXT_ALIGN_BOTTOM,2,colorborder)
 				end
-			end
-
-			//Draw the name and position of all bones currently selected in the bonelist
-			if !IsValid(bonemanipent) then return end
-			for _, line in pairs (panel.bonelist:GetSelected()) do
-				local _pos = nil
-				local _name = ""
-
-				if line.id == -1 then
-					_pos = bonemanipent:GetPos()
-					_name = "(origin)"
-				else
-					local matr = bonemanipent:GetBoneMatrix(line.id)
-					if matr then 
-						_pos = matr:GetTranslation() 
-					else
-						_pos = bonemanipent:GetBonePosition(line.id) 
-					end
-					_name = bonemanipent:GetBoneName(line.id)
-				end
-
-				if !_pos then continue end
-				local _pos = _pos:ToScreen()
-				local textpos = {x = _pos.x+5,y = _pos.y-5}
-
-				draw.RoundedBox(0,_pos.x - 3,_pos.y - 3,6,6,colorborder)
-				draw.RoundedBox(0,_pos.x - 1,_pos.y - 1,2,2,colorselect)
-				draw.SimpleTextOutlined(_name,"Default",textpos.x,textpos.y,colorselect,TEXT_ALIGN_LEFT,TEXT_ALIGN_BOTTOM,2,colorborder)
 			end
 		end
-
 	end)
 
 end
