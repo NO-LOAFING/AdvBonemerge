@@ -7,6 +7,7 @@ TOOL.ClientConVar.matchnames = "1"
 TOOL.ClientConVar.drawhalo = "1"
 TOOL.ClientConVar.bone_hierarchy = "1"
 TOOL.ClientConVar.bone_ids = "1"
+TOOL.ClientConVar.bone_linkicons = "0"
 
 TOOL.Information = {
 	{name = "info1", stage = 1, icon = "gui/info.png"},
@@ -2051,6 +2052,8 @@ if CLIENT then
 			Height = 300,
 		})
 
+		local cv_linkicons = GetConVar("advbonemerge_bone_linkicons")
+
 		panel.bonelist.Bones = {}
 		panel.bonelist:SetMultiSelect(true)
 		panel.bonelist.PopulateBoneList = function()
@@ -2059,7 +2062,6 @@ if CLIENT then
 
 			panel.bonelist:Clear()
 			panel.bonelist:ClearSelection() //TODO: is this unnecessary?
-			panel.UpdateBoneManipOptions()
 
 			if IsValid(ent) and ent:GetBoneCount() and ent:GetBoneCount() > 0 then
 				ent:SetupBones()
@@ -2067,17 +2069,17 @@ if CLIENT then
 
 				panel.bonelist.Bones = {}
 				local parent = ent:GetParent()
-				local firstline
 
 				local function AddBone(name, id)
 					local line = panel.bonelist:AddLine(name)
 					panel.bonelist.Bones[id] = line
 					line.id = id
-					firstline = firstline or line
 					line.AdvBone_BoneHoverData = { //info for on-hover check in HUDPaint
 						id = id,
 						ent = ent
 					}
+					line:SetTooltip(string.TrimLeft(name))
+					line:SetTooltipDelay(0)
 
 					local selectedtargetbone = -1
 					if ent.AdvBone_BoneInfo and ent.AdvBone_BoneInfo[id] then
@@ -2091,32 +2093,29 @@ if CLIENT then
 						line.Paint = function(self, w, h)
 							derma.SkinHook("Paint", "ListViewLine", self, w, h)
 							if line.HasTargetBone then
-								if self.Icon then
-									self.Icon:SetImage("icon16/tick.png")
-								end
-  								surface.SetDrawColor(0,255,0,35)
+								AdvBone_BoneList_IconTick = AdvBone_BoneList_IconTick or Material("icon16/tick.png")
+								icon = AdvBone_BoneList_IconTick
+								surface.SetDrawColor(0,255,0,35)
 							else
-								if self.Icon then
-									self.Icon:SetImage("icon16/cross.png")
-								end
-					  			surface.SetDrawColor(255,0,0,35)
+								AdvBone_BoneList_IconCross = AdvBone_BoneList_IconCross or Material("icon16/cross.png")
+								icon = AdvBone_BoneList_IconCross
+								surface.SetDrawColor(255,0,0,35)
 							end
-    							surface.DrawRect(0, 0, w, h)
+							surface.DrawRect(0, 0, w, h)
+							if cv_linkicons:GetBool() then //these are mostly unnecessary because the line is already colored red/green, but could be useful for colorblindness i suppose, so gate them behind a convar
+								surface.SetDrawColor(255,255,255,255)
+								surface.SetMaterial(icon)
+								local x = w - 16
+								if panel.bonelist.VBar.Enabled then x = x - panel.bonelist.VBar:GetWide() end
+								surface.DrawTexturedRect(x, (h-16)/2, 16, 16)
+								surface.SetDrawColor(255,255,255,(255*0.75))
+								AdvBone_BoneList_IconLink = AdvBone_BoneList_IconLink or Material("icon16/link.png")
+								surface.SetMaterial(AdvBone_BoneList_IconLink)
+								surface.DrawTexturedRect(x, (h-16)/2, 16, 16)
+							end
 						end
-
-						local img = vgui.Create("DImage", line)
-						line.Icon = img
-						img:SetImage("icon16/cross.png")
-						img:SizeToContents()
-						img:Dock(RIGHT)
-						img:DockMargin(0,0,panel.bonelist.VBar:GetWide(),0) //not worth the trouble making this adjust for whether the vbar is visible or not
-
-						local img = vgui.Create("DImage", line)
-						line.Icon2 = img
-						img:SetImage("icon16/link.png")
-						img:SizeToContents()
-						img:Dock(RIGHT)
 					end
+					line:SetTooltip(string.TrimLeft(name))
 
 					//Right Click: Show a dropdown menu with individual bone copy/paste options
 					line.OnRightClick = function()
@@ -2135,7 +2134,6 @@ if CLIENT then
 							ent:SetupBones()
 							ent:InvalidateBoneCache()
 
-							local bonecountmin = -1
 							for k, line in pairs (boneids) do
 								local entry = {}
 
@@ -2272,9 +2270,8 @@ if CLIENT then
 					end
 				end
 
-				if firstline then 
-					panel.bonelist:SelectItem(firstline)
-				end
+				panel.bonelist:SelectFirstItem()
+				panel.UpdateBoneManipOptions()
 
 				//indents and id numbers both completely break alphabetical sorting; this wasn't even 
 				//an intended feature at all, but i'm not turning it off completely because you just 
@@ -2513,6 +2510,11 @@ if CLIENT then
 			if !IsValid(ent) then return end
 			local parent = ent:GetParent()
 			if parent.AttachedEntity then parent = parent.AttachedEntity end
+
+			if IsValid(parent) then
+				parent:SetupBones()
+				parent:InvalidateBoneCache()
+			end
 
 			local selectedtargetbone
 			for k, line in pairs (boneids) do
@@ -2835,6 +2837,8 @@ if CLIENT then
 
 		local checkbox = panel:AddControl("Checkbox", {Label = "Show bone ID numbers", Command = "advbonemerge_bone_ids"})
 		checkbox.OnChange = BonelistUpdateAppearance
+
+		panel:AddControl("Checkbox", {Label = "Show icons for linked/unlinked bones", Command = "advbonemerge_bone_linkicons"})
 		
 		panel:AddControl("Checkbox", {Label = "Draw selection halo", Command = "advbonemerge_drawhalo"})
 
