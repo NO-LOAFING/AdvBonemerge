@@ -108,12 +108,12 @@ if SERVER then
 			end
 		end
 		//Copy bonemanips
-		local hasscalemanip = false
+		//local hasscalemanip = false
 		newent.AdvBone_BoneManips = {} //this gets repopulated by ManipulateBoneX funcs below
 		for i = -1, oldent:GetBoneCount() - 1 do
 			if oldent:GetManipulateBonePosition(i) != vector_origin then newent:ManipulateBonePosition(i, oldent:GetManipulateBonePosition(i), false) end //don't network these to the client yet; the ent's networking funcs will handle it
 			if oldent:GetManipulateBoneAngles(i) != angle_zero then newent:ManipulateBoneAngles(i, oldent:GetManipulateBoneAngles(i), false) end
-			if oldent:GetManipulateBoneScale(i) != Vector(1,1,1) then newent:ManipulateBoneScale(i, oldent:GetManipulateBoneScale(i), false) hasscalemanip = true end
+			if oldent:GetManipulateBoneScale(i) != Vector(1,1,1) then newent:ManipulateBoneScale(i, oldent:GetManipulateBoneScale(i), false) --[[hasscalemanip = true]] end
 			//newent:ManipulateBoneJiggle(i, oldent:GetManipulateBoneJiggle(i))  //broken?
 		end
 		//Copy over DisableBeardFlexifier, just in case we're an unmerged ent that inherited this value
@@ -126,7 +126,8 @@ if SERVER then
 		for i = -1, oldent:GetBoneCount() - 1 do
 			local newsubtable = {
 				parent = "",
-				scale = !hasscalemanip, //If the ent we converted has any scale manips, then turn this off by default so the manips look the same as they did before
+				//scale = !hasscalemanip, //If the ent we converted has any scale manips, then turn this off by default so the manips look the same as they did before
+				scale = true //never mind, the above functionality is unintuitive, and just leaves people wondering why "scale with target" is defaulting to false
 			}
 
 			if target.AdvBone_BoneInfo and target.AdvBone_BoneInfo[i] then
