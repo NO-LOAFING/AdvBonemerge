@@ -5,7 +5,7 @@ TOOL.ConfigName = ""
 
 TOOL.ClientConVar.matchnames = "1"
 TOOL.ClientConVar.drawhalo = "1"
-TOOL.ClientConVar.bone_hierarchy = "1"
+TOOL.ClientConVar.bone_hierarchyview = "0"
 TOOL.ClientConVar.bone_ids = "1"
 TOOL.ClientConVar.bone_linkicons = "0"
 
@@ -1578,7 +1578,7 @@ if CLIENT then
 								CopyBone(-1)
 							end
 
-							if !GetConVar("advbonemerge_bone_hierarchy"):GetBool() then
+							if !GetConVar("advbonemerge_bone_hierarchyview"):GetBool() then
 								for id = 0, modelent:GetBoneCount() - 1 do
 									CopyBone(id)
 								end
@@ -2250,7 +2250,7 @@ if CLIENT then
 					has_origin_manip = true
 				end
 
-				if !GetConVar("advbonemerge_bone_hierarchy"):GetBool() then
+				if !GetConVar("advbonemerge_bone_hierarchyview"):GetBool() then
 					for id = 0, ent:GetBoneCount() - 1 do
 						local name = ent:GetBoneName(id)
 						if name != "__INVALIDBONE__" then
@@ -2290,7 +2290,7 @@ if CLIENT then
 				//indents and id numbers both completely break alphabetical sorting; this wasn't even 
 				//an intended feature at all, but i'm not turning it off completely because you just 
 				//know there's *someone* out there who's made it an integral part of their workflow.
-				panel.bonelist:SetSortable(!GetConVar("advbonemerge_bone_hierarchy"):GetBool() and !GetConVar("advbonemerge_bone_ids"):GetBool())
+				panel.bonelist:SetSortable(!GetConVar("advbonemerge_bone_hierarchyview"):GetBool() and !GetConVar("advbonemerge_bone_ids"):GetBool())
 			else
 				//Add a placeholder line explaining why the list is empty
 				local line = panel.bonelist:AddLine("(select a model above to edit its bones)")
@@ -2568,7 +2568,7 @@ if CLIENT then
 			panel.targetbonelist:AddChoice(nonetext, -1, (selectedtargetbone == -1))
 
 			if IsValid(parent) and parent:GetBoneCount() and parent:GetBoneCount() != 0 then
-				if !GetConVar("advbonemerge_bone_hierarchy"):GetBool() then
+				if !GetConVar("advbonemerge_bone_hierarchyview"):GetBool() then
 					for id = 0, parent:GetBoneCount() - 1 do
 						local name = parent:GetBoneName(id)
 						if name != "__INVALIDBONE__" then
@@ -2846,7 +2846,7 @@ if CLIENT then
 			end
 		end
 
-		local checkbox = panel:AddControl("Checkbox", {Label = "Display bone list as hierarchy", Command = "advbonemerge_bone_hierarchy"})
+		local checkbox = panel:AddControl("Checkbox", {Label = "Display bone list as hierarchy", Command = "advbonemerge_bone_hierarchyview"})
 		checkbox.OnChange = BonelistUpdateAppearance
 
 		local checkbox = panel:AddControl("Checkbox", {Label = "Show bone ID numbers", Command = "advbonemerge_bone_ids"})
