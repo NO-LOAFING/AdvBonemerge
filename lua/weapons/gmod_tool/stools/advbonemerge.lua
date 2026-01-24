@@ -470,7 +470,13 @@ if CLIENT then
 	local colorunselect = Color(255,255,255,255)
 	local cv_halo //the convar won't exist until a bit later, when the toolgun code reads the TOOL.ClientConVar tab and creates them, so don't cache the convar until after we've selected an ent
 
-	hook.Add("HUDPaint", "AdvBone_HUDPaint_ToolSelection", function()
+	local function AdvBone_DoHUDPaint()
+		//Don't run this func more than once per frame
+		local curtime = CurTime()
+		AdvBone_DoHUDPaint_LastRunTime = AdvBone_DoHUDPaint_LastRunTime or curtime
+		if AdvBone_DoHUDPaint_LastRunTime >= curtime then return end
+		AdvBone_DoHUDPaint_LastRunTime = curtime
+
 		if g_ContextMenu and g_ContextMenu:IsVisible() then
 			local panel = controlpanel.Get("advbonemerge")
 			if !panel or !panel.bonelist then return end
@@ -566,7 +572,14 @@ if CLIENT then
 				end
 			end
 		end
-	end)
+	end
+
+	//Ideally, we want to use the HUDPaint hook for this, so that it doesn't stop displaying when the player switches to 
+	//another weapon. However, if another addon breaks the HUDPaint hook by returning false in its own hook function, then 
+	//this won't run at all, so use TOOL.DrawHUD as a fallback. One addon that causes this problem is an abandonware legacy 
+	//addon commonly used by scenebuilders called Scenic Dispenser, so we can't just tell the creator of the addon to fix it.
+	hook.Add("HUDPaint", "AdvBone_HUDPaint_ToolSelection", AdvBone_DoHUDPaint)
+	TOOL.DrawHUD = AdvBone_DoHUDPaint
 
 end
 
