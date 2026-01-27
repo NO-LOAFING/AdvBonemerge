@@ -4,10 +4,11 @@ TOOL.Command = nil
 TOOL.ConfigName = "" 
 
 TOOL.ClientConVar.matchnames = "1"
-TOOL.ClientConVar.drawhalo = "1"
+TOOL.ClientConVar.bone_multiselect = "0"
 TOOL.ClientConVar.bone_hierarchyview = "0"
 TOOL.ClientConVar.bone_ids = "1"
 TOOL.ClientConVar.bone_linkicons = "0"
+TOOL.ClientConVar.drawhalo = "1"
 
 TOOL.Information = {
 	{name = "info1", stage = 1, icon = "gui/info.png"},
@@ -2079,13 +2080,13 @@ if CLIENT then
 		local cv_linkicons = GetConVar("advbonemerge_bone_linkicons")
 
 		panel.bonelist.Bones = {}
-		panel.bonelist:SetMultiSelect(true)
 		panel.bonelist.PopulateBoneList = function()
 
 			local ent = panel.modellist.selectedent
 
 			panel.bonelist:Clear()
 			panel.bonelist:ClearSelection() //TODO: is this unnecessary?
+			panel.bonelist:SetMultiSelect(GetConVar("advbonemerge_bone_multiselect"):GetBool())
 
 			if IsValid(ent) and ent:GetBoneCount() and ent:GetBoneCount() > 0 then
 				ent:SetupBones()
@@ -2855,6 +2856,9 @@ if CLIENT then
 				if tab[line.id] then panel.bonelist:SelectItem(line) end
 			end
 		end
+
+		local checkbox = panel:AddControl("Checkbox", {Label = "Enable selecting multiple bones\n(ctrl+click, shift+click, or click and drag)", Command = "advbonemerge_bone_multiselect"})
+		checkbox.OnChange = BonelistUpdateAppearance
 
 		local checkbox = panel:AddControl("Checkbox", {Label = "Display bone list as hierarchy", Command = "advbonemerge_bone_hierarchyview"})
 		checkbox.OnChange = BonelistUpdateAppearance
