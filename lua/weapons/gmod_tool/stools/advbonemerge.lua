@@ -730,15 +730,18 @@ if SERVER then
 	util.AddNetworkString("AdvBone_ResetBoneChangeTime_SendToCl")
 
 	AdvBone_ResetBoneChangeTime = function(ent)
-		//Limit how often the server sends this to clients; i don't know of any obvious cases where this would happen a lot like AdvBone_ResetBoneChangeTimeOnChildren does from manips
-		//or stop motion helper, but let's be safe here
-		local time = CurTime()
-		ent.AdvBone_ResetBoneChangeTime_LastSent = ent.AdvBone_ResetBoneChangeTime_LastSent or 0
-		if time > ent.AdvBone_ResetBoneChangeTime_LastSent then
-			ent.AdvBone_ResetBoneChangeTime_LastSent = time
-			net.Start("AdvBone_ResetBoneChangeTime_SendToCl", true)
-				net.WriteEntity(ent)
-			net.Broadcast()
+		local class = ent:GetClass()
+		if class == "ent_advbonemerge" or class == "prop_animated" then
+			//Limit how often the server sends this to clients; i don't know of any obvious cases where this would happen a lot like AdvBone_ResetBoneChangeTimeOnChildren does from manips
+			//or stop motion helper, but let's be safe here
+			local time = CurTime()
+			ent.AdvBone_ResetBoneChangeTime_LastSent = ent.AdvBone_ResetBoneChangeTime_LastSent or 0
+			if time > ent.AdvBone_ResetBoneChangeTime_LastSent then
+				ent.AdvBone_ResetBoneChangeTime_LastSent = time
+				net.Start("AdvBone_ResetBoneChangeTime_SendToCl", true)
+					net.WriteEntity(ent)
+				net.Broadcast()
+			end
 		end
 	end
 
@@ -747,7 +750,10 @@ else
 	net.Receive("AdvBone_ResetBoneChangeTime_SendToCl", function()
 		local ent = net.ReadEntity()
 		if IsValid(ent) then
-			ent.LastBoneChangeTime = CurTime()
+			local class = ent:GetClass()
+			if class == "ent_advbonemerge" or class == "prop_animated" then
+				ent.LastBoneChangeTime = CurTime()
+			end
 		end
 	end)
 
@@ -869,7 +875,6 @@ if SERVER then
 		if !IsValid(ply) then return end
 
 		local ent = net.ReadEntity()
-		if !IsValid(ent) then return end //TODO: this is bad, rework this func so we can still read all the values without needing ent to be valid
 
 		//Fake traceresult table used for CanTool and tool click functions, from an imaginary trace starting and ending at the origin of the entity
 		local tr = {
@@ -897,7 +902,18 @@ if SERVER then
 		}
 
 		local input = net.ReadUInt(4)
-		//if input then return end
+
+		local data, data2
+		if input == 6 then //set bodygroup
+			data = net.ReadUInt(8)
+			data2 = net.ReadUInt(8)
+		elseif input == 7 then //set skin
+			data = net.ReadUInt(8)
+		elseif input == 11 then //set custom name
+			data = net.ReadString()
+		end
+		
+		if !IsValid(ent) then return end
 
 		if input == 0 then //unmerge
 
@@ -985,20 +1001,15 @@ if SERVER then
 
 		elseif input == 6 then //set bodygroup
 
-			local body = net.ReadUInt(8)
-			local id = net.ReadUInt(8)
-
 			if !gamemode.Call("CanProperty", ply, "bodygroups", ent) then return end
 
-			ent:SetBodygroup(body, id)
+			ent:SetBodygroup(data, data2)
 
 		elseif input == 7 then //set skin
 
-			local skinid = net.ReadUInt(8)
-
 			if !gamemode.Call("CanProperty", ply, "skin", ent) then return end
 
-			ent:SetSkin(skinid)
+			ent:SetSkin(data)
 
 		elseif input == 8 then //disable beard flexifier
 
@@ -1025,11 +1036,9 @@ if SERVER then
 
 		elseif input == 11 then //set custom name
 
-			local str = net.ReadString()
-
-			if str != "" then
-				ent:SetNWString("AdvBone_CustomName", str)
-				duplicator.StoreEntityModifier(ent, "AdvBone_CustomName", {name = str})
+			if data != "" then
+				ent:SetNWString("AdvBone_CustomName", data)
+				duplicator.StoreEntityModifier(ent, "AdvBone_CustomName", {name = data})
 			else
 				ent:SetNWString("AdvBone_CustomName", nil)
 				duplicator.ClearEntityModifier(ent, "AdvBone_CustomName")

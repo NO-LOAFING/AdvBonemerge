@@ -688,7 +688,7 @@ if SERVER then
 	net.Receive("AdvBone_EntBoneInfoTable_GetFromSv", function(_, ply)
 		local ent = net.ReadEntity()
 		local domanips = net.ReadBool()
-		if !IsValid(ent) or !ent.AdvBone_BoneInfo then return end
+		if !IsValid(ent) or !ent.AdvBone_BoneInfo or (ent:GetClass() != "ent_advbonemerge" and ent:GetClass() != "prop_animated") then return end
 
 		net.Start("AdvBone_EntBoneInfoTable_SendToCl", true)
 			net.WriteEntity(ent)
@@ -799,7 +799,7 @@ if CLIENT then
 			//PrintTable(tab2)
 		end
 		
-		if IsValid(ent) then 
+		if IsValid(ent) and (ent:GetClass() == "ent_advbonemerge" or ent:GetClass() == "prop_animated") then 
 			if (IsValid(parent) or ent:GetClass() == "prop_animated") and !ent.AdvBone_BoneInfo_Received then
 				//BUG: In some instances, entities "merged via constraint" will initially receive a mangled boneinfo table with exactly the same contents every time (with a lot of
 				//useless keys such as a bone -256). Serverside, the table being sent is fine - the issue only occurs on the client's end, when receiving it. These tables are always
@@ -1524,21 +1524,31 @@ AdvBone_ResetBoneChangeTimeOnChildren = function(ent, networking) //global func 
 	if CLIENT then
 		for _, ent2 in pairs (ent:GetChildren()) do
 			if ent2.AdvBone_BoneManips then
-				ent2.LastBoneChangeTime = CurTime()
-				AdvBone_ResetBoneChangeTimeOnChildren(ent2)
+				local class = ent2:GetClass()
+				if class == "ent_advbonemerge" or class == "prop_animated" then
+					ent2.LastBoneChangeTime = CurTime()
+					AdvBone_ResetBoneChangeTimeOnChildren(ent2)
+				end
 			end
 		end
 	elseif networking then
-		//Limit how often the server sends this to clients; multiple bone manips at once or ragdoll movements i.e. Stop Motion Helper will run this several times per frame
-		//TODO: can we delay this longer? the client waits until 10 *frames* after LastBoneChangeTime to let BuildBonePositions fall asleep, which of course isn't consistent with server 
-		//tickrate at all, so i don't know how we'd add any more of a delay without potentially breaking things for players with an insanely high framerate.
-		local time = CurTime()
-		ent.AdvBone_ResetBoneChangeTimeOnChildren_LastSent = ent.AdvBone_ResetBoneChangeTimeOnChildren_LastSent or time
-		if time > ent.AdvBone_ResetBoneChangeTimeOnChildren_LastSent then
-			ent.AdvBone_ResetBoneChangeTimeOnChildren_LastSent = time
-			net.Start("AdvBone_ResetBoneChangeTimeOnChildren_SendToCl", true)
-				net.WriteEntity(ent)
-			net.Broadcast()
+		for _, ent2 in pairs (ent:GetChildren()) do
+			//We only need to send this if the ent has a child ent_advbonemerge or prop_animated
+			local class = ent2:GetClass()
+			if class == "ent_advbonemerge" or class == "prop_animated" then
+				//Limit how often the server sends this to clients; multiple bone manips at once or ragdoll movements i.e. Stop Motion Helper will run this several times per frame
+				//TODO: can we delay this longer? the client waits until 10 *frames* after LastBoneChangeTime to let BuildBonePositions fall asleep, which of course isn't consistent with server 
+				//tickrate at all, so i don't know how we'd add any more of a delay without potentially breaking things for players with an insanely high framerate.
+				local time = CurTime()
+				ent.AdvBone_ResetBoneChangeTimeOnChildren_LastSent = ent.AdvBone_ResetBoneChangeTimeOnChildren_LastSent or time
+				if time > ent.AdvBone_ResetBoneChangeTimeOnChildren_LastSent then
+					ent.AdvBone_ResetBoneChangeTimeOnChildren_LastSent = time
+					net.Start("AdvBone_ResetBoneChangeTimeOnChildren_SendToCl", true)
+						net.WriteEntity(ent)
+					net.Broadcast()
+				end
+				break 
+			end
 		end
 	end
 end
