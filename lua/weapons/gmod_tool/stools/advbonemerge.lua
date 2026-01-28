@@ -2856,7 +2856,11 @@ if CLIENT then
 			//Now restore the selected bones
 			panel.bonelist:ClearSelection()
 			for k, line in pairs (panel.bonelist:GetLines()) do
-				if tab[line.id] then panel.bonelist:SelectItem(line) end
+				if tab[line.id] then 
+					panel.bonelist:SelectItem(line)
+					//if we're going from multiselect on to multiselect off, then only reselect 1 bone
+					if !GetConVar("advbonemerge_bone_multiselect"):GetBool() then break end
+				end
 			end
 		end
 
