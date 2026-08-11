@@ -1080,7 +1080,9 @@ if SERVER then
 	//		Bool: Do target bone name?
 	//		IF TRUE:
 	//			String: Target bone name
-	//		Bool: Follow target bone scale
+	//		Bool: Do follow target bone scale?
+	//		IF TRUE:
+	//			Bool: Follow target bone scale
 	//
 	//		Bool: Do pos manip?
 	//		IF TRUE:
@@ -1114,7 +1116,10 @@ if SERVER then
 			if net.ReadBool() then
 				targetbone = net.ReadString()
 			end
-			local scaletarget = net.ReadBool()
+			local scaletarget
+			if net.ReadBool() then
+				scaletarget = net.ReadBool()
+			end
 
 			local newpos, newang, newscl
 			if net.ReadBool() then
@@ -1130,6 +1135,7 @@ if SERVER then
 			if IsValid(ent) then
 				if ent.AdvBone_BoneInfo and ent.AdvBone_BoneInfo[id] then
 					if targetbone == nil then targetbone = ent.AdvBone_BoneInfo[id].parent end
+					if scaletarget == nil then scaletarget = ent.AdvBone_BoneInfo[id].scale end
 					ent.AdvBone_BoneInfo[id] = {
 						parent = targetbone,
 						scale = scaletarget,
@@ -1260,7 +1266,7 @@ if CLIENT then
 
 
 
-	local function SendBoneManipPasteToServer(modelent, tab)
+	local function SendBoneManipPasteToServer(modelent, tab, filter)
 
 		if !tab then return end
 
@@ -1278,22 +1284,29 @@ if CLIENT then
 			if id then
 				//Compile information to be sent to the server for this bone
 				local serverentry = table.Copy(entry)
+				if filter then
+					//Optional "filter" arg to only paste one particular key to each bone (i.e. paste only scale)
+					for k, v in pairs (serverentry) do
+						if k != filter then serverentry[k] = nil end
+					end
+				end
+
 				serverentry.id = id
 				serverentry.bonename = nil
 
 				//Only send manips to the server if the value has changed, otherwise there's no point
 				//Apply the manips clientside too, so that UpdateBoneManipOptions can get their values immediately
-				if serverentry.trans != modelent:GetManipulateBonePosition(id) then
+				if serverentry.trans and serverentry.trans != modelent:GetManipulateBonePosition(id) then
 					modelent:ManipulateBonePosition(id, serverentry.trans)
 				else
 					serverentry.trans = nil
 				end
-				if serverentry.rot != modelent:GetManipulateBoneAngles(id) then
+				if serverentry.rot and serverentry.rot != modelent:GetManipulateBoneAngles(id) then
 					modelent:ManipulateBoneAngles(id, serverentry.rot)
 				else
 					serverentry.rot = nil
 				end
-				if serverentry.scale != modelent:GetManipulateBoneScale(id) then
+				if serverentry.scale and serverentry.scale != modelent:GetManipulateBoneScale(id) then
 					modelent:ManipulateBoneScale(id, serverentry.scale)
 				else
 					serverentry.scale = nil
@@ -1302,30 +1315,33 @@ if CLIENT then
 				local targetbone_changed
 				local scaletarget_changed
 				if modelent.AdvBone_BoneInfo and modelent.AdvBone_BoneInfo[id] then
-					//Same thing with targetbone, don't send it to the server if the value hasn't changed
-					if modelent.AdvBone_BoneInfo[id].parent != entry.targetbone then
+					//Same thing with targetbone and scaletarget, don't send them to the server if the value hasn't changed
+					if serverentry.targetbone and serverentry.targetbone != modelent.AdvBone_BoneInfo[id].parent then
 						targetbone_changed = true
 					end
-					//And scaletarget - this one's a bit different since it'd be silly to network
-					//an "are we sending this" bool for a value that's already a bool, so we always
-					//send it as long as anything on this bone has changed
-					if modelent.AdvBone_BoneInfo[id].scale != entry.scaletarget then
+					if serverentry.scaletarget != nil and serverentry.scaletarget != modelent.AdvBone_BoneInfo[id].scale then
 						scaletarget_changed = true
 					end
 					//Also apply the new BoneInfo clientside
-					modelent.AdvBone_BoneInfo[id] = {
-						parent = entry.targetbone,
-						scale = entry.scaletarget,
+					local i = {
+						parent = serverentry.targetbone,
+						scale = serverentry.scaletarget,
 					}
+					if i.parent == nil then i.parent = modelent.AdvBone_BoneInfo[id].parent end
+					if i.scale == nil then i.scale = modelent.AdvBone_BoneInfo[id].scale end
+					modelent.AdvBone_BoneInfo[id] = i
 				end
 				if !targetbone_changed then
 					serverentry.targetbone = nil
 				end
+				if !scaletarget_changed then
+					serverentry.scaletarget = nil
+				end
 
 				//Update visuals of list entries to show their new status
-				if modelent == panel.modellist.selectedent then
+				if serverentry.targetbone and modelent == panel.modellist.selectedent then
 					local targetboneid = -1
-					if entry.targetbone != "" and IsValid(parent) then targetboneid = parent:LookupBone(entry.targetbone) end
+					if serverentry.targetbone != "" and IsValid(parent) then targetboneid = parent:LookupBone(serverentry.targetbone) end
 					panel.bonelist.Bones[id].HasTargetBone = targetboneid != -1
 				end
 
@@ -1339,8 +1355,8 @@ if CLIENT then
 		end
 
 		--[[MsgN("client info:")
-		PrintTable(tab)
-		MsgN("server info:")
+		PrintTable(tab)]]
+		--[[MsgN("server info:")
 		PrintTable(serverinfo)]]
 
 		if table.Count(serverinfo) > 0 then //if none of the bones match then this will still be empty
@@ -1358,7 +1374,10 @@ if CLIENT then
 					if entry.targetbone then
 						net.WriteString(entry.targetbone)
 					end
-					net.WriteBool(entry.scaletarget) //no "should we send this" bool for this one since it's already just a bool
+					net.WriteBool(entry.scaletarget != nil)
+					if entry.scaletarget != nil then
+						net.WriteBool(entry.scaletarget)
+					end
 					
 					net.WriteBool(entry.trans)
 					if entry.trans then
@@ -1638,17 +1657,63 @@ if CLIENT then
 						if istable(panel.modellist.copypasteinfo) then count = #panel.modellist.copypasteinfo end
 						local name = "Paste " .. count .. " bone settings by name"
 						if count == 1 then name = "Paste " .. count .. " bone setting by name" end
-						local option = menu:AddOption(name, function()
-							local count = SendBoneManipPasteToServer(modelent, panel.modellist.copypasteinfo)
+						local pastefunc = function(filter)
+							local count = SendBoneManipPasteToServer(modelent, panel.modellist.copypasteinfo, filter)
 							if count != nil then
 								local name = "Pasted " .. count .. " bones"
 								if count == 1 then name = "Pasted " .. count .. " bone" end
 								GAMEMODE:AddNotify(name, NOTIFY_GENERIC, 2)
 								surface.PlaySound("common/wpn_select.wav")
 							end
-						end)
+						end
+						local submenu, option = menu:AddSubMenu(name, function() pastefunc() end)
 						option:SetEnabled(count > 0)
 						option:SetImage("icon16/page_paste.png")
+						submenu:SetMinimumWidth(0)
+						if count > 0 then
+							local function PerformLayout(self, w, h)
+								self:SizeToContents()
+								self:SetWide( self:GetWide() )//+ 30 ) //the only change; remove extra right-side width
+
+								w = math.max( self:GetParent():GetWide(), self:GetWide() )
+
+								self:SetSize( w, 22 )
+
+								if ( IsValid( self.SubMenuArrow ) ) then
+
+									self.SubMenuArrow:SetSize( 15, 15 )
+									self.SubMenuArrow:CenterVertical()
+									self.SubMenuArrow:AlignRight( 4 )
+
+								end
+
+								DButton.PerformLayout( self, w, h )
+							end
+
+							local option = submenu:AddOption("(only 'Target Bone')", function() pastefunc("targetbone") end)
+							option:SetTextInset(9,0)
+							option.PerformLayout = PerformLayout
+
+							submenu:AddSpacer()
+
+							local option = submenu:AddOption("(only 'Position')", function() pastefunc("trans") end)
+							option:SetTextInset(9,0)
+							option.PerformLayout = PerformLayout
+							
+							local option = submenu:AddOption("(only 'Angle')", function() pastefunc("rot") end)
+							option:SetTextInset(9,0)
+							option.PerformLayout = PerformLayout
+							
+							local option = submenu:AddOption("(only 'Scale')", function() pastefunc("scale") end)
+							option:SetTextInset(9,0)
+							option.PerformLayout = PerformLayout
+
+							submenu:AddSpacer()
+
+							local option = submenu:AddOption("(only 'Scale with target bone')", function() pastefunc("scaletarget") end)
+							option:SetTextInset(9,0)
+							option.PerformLayout = PerformLayout
+						end
 
 						local spacer = menu:AddSpacer()
 
@@ -2216,7 +2281,7 @@ if CLIENT then
 						elseif #boneids == 1 then
 							name = "Paste " .. count .. " bone settings to " .. #boneids ..  " selected bone"
 						end
-						local option = menu:AddOption(name, function()
+						local pastefunc = function(filter)
 							local copy_index = 1
 							local pastetab = {}
 
@@ -2248,16 +2313,62 @@ if CLIENT then
 								if copy_index > count then copy_index = 1 end
 							end
 
-							local count = SendBoneManipPasteToServer(ent, pastetab)
+							local count = SendBoneManipPasteToServer(ent, pastetab, filter)
 							if count != nil then
 								local name = "Pasted " .. count .. " bones"
 								if count == 1 then name = "Pasted " .. count .. " bone" end
 								GAMEMODE:AddNotify(name, NOTIFY_GENERIC, 2)
 								surface.PlaySound("common/wpn_select.wav")
 							end
-						end)
+						end
+						local submenu, option = menu:AddSubMenu(name, function() pastefunc() end)
 						option:SetEnabled(count > 0)
 						option:SetImage("icon16/page_paste.png")
+						submenu:SetMinimumWidth(0)
+						if count > 0 then
+							local function PerformLayout(self, w, h)
+								self:SizeToContents()
+								self:SetWide( self:GetWide() )//+ 30 ) //the only change; remove extra right-side width
+
+								w = math.max( self:GetParent():GetWide(), self:GetWide() )
+
+								self:SetSize( w, 22 )
+
+								if ( IsValid( self.SubMenuArrow ) ) then
+
+									self.SubMenuArrow:SetSize( 15, 15 )
+									self.SubMenuArrow:CenterVertical()
+									self.SubMenuArrow:AlignRight( 4 )
+
+								end
+
+								DButton.PerformLayout( self, w, h )
+							end
+
+							local option = submenu:AddOption("(only 'Target Bone')", function() pastefunc("targetbone") end)
+							option:SetTextInset(9,0)
+							option.PerformLayout = PerformLayout
+
+							submenu:AddSpacer()
+
+							local option = submenu:AddOption("(only 'Position')", function() pastefunc("trans") end)
+							option:SetTextInset(9,0)
+							option.PerformLayout = PerformLayout
+							
+							local option = submenu:AddOption("(only 'Angle')", function() pastefunc("rot") end)
+							option:SetTextInset(9,0)
+							option.PerformLayout = PerformLayout
+							
+							local option = submenu:AddOption("(only 'Scale')", function() pastefunc("scale") end)
+							option:SetTextInset(9,0)
+							option.PerformLayout = PerformLayout
+
+							submenu:AddSpacer()
+
+							local option = submenu:AddOption("(only 'Scale with target bone')", function() pastefunc("scaletarget") end)
+							option:SetTextInset(9,0)
+							option.PerformLayout = PerformLayout
+						end
 						
 						menu:Open()
 					end
