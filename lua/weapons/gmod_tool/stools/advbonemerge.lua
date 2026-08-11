@@ -2133,6 +2133,7 @@ if CLIENT then
 			if IsValid(ent) then
 				panel.modellist.AddModelNodes(ent, panel.modellist)
 
+				panel.bonefilter:SetHeight(20)
 				panel.bonelist:SetHeight(300)
 			else
 				//Add a placeholder node - the DTree will break and become unusable if we empty it out and don't immediately add more nodes to it in the same function
@@ -2140,6 +2141,7 @@ if CLIENT then
 				panel.modellist.AllNodes.message.Icon:SetImage("gui/info.png")
 				panel.modellist.TopNode = panel.modellist.AllNodes.message
 
+				panel.bonefilter:SetHeight(0)
 				panel.bonelist:SetHeight(0)
 			end
 
@@ -2147,6 +2149,17 @@ if CLIENT then
 
 
 
+
+		panel.bonefilter = vgui.Create("DTextEntry", panel)
+		panel.bonefilter:SetPlaceholderText("#spawnmenu.quick_filter")
+		panel:AddPanel(panel.bonefilter)
+		panel.bonefilter:SetUpdateOnType(true)
+		panel.bonefilter.OnValueChange = function(self, txt)
+			if !self._IsUpdating then
+				panel.bonelist.PopulateBoneList(true)
+			end
+		end
+		panel.bonefilter:GetParent():DockMargin(0,0,0,-9) //move it closer to the bonelist
 
 		panel.bonelist = panel:AddControl("ListBox", { //note: for reference, this is actually a DListView, not a DListBox
 			Label = "Bone", 
@@ -2156,13 +2169,26 @@ if CLIENT then
 		local cv_linkicons = GetConVar("advbonemerge_bone_linkicons")
 
 		panel.bonelist.Bones = {}
-		panel.bonelist.PopulateBoneList = function()
+		panel.bonelist.PopulateBoneList = function(dont_clear_filter)
 
 			local ent = panel.modellist.selectedent
 
 			panel.bonelist:Clear()
-			panel.bonelist:ClearSelection() //TODO: is this unnecessary?
 			panel.bonelist:SetMultiSelect(GetConVar("advbonemerge_bone_multiselect"):GetBool())
+
+			local filter
+			if dont_clear_filter then
+				filter = panel.bonefilter:GetText()
+				if filter == "" then
+					filter = nil
+				elseif filter then
+					filter = filter:lower()
+				end
+			else
+				panel.bonefilter._IsUpdating = true
+				panel.bonefilter:SetText("")
+				panel.bonefilter._IsUpdating = nil
+			end
 
 			if IsValid(ent) and ent:GetBoneCount() and ent:GetBoneCount() > 0 then
 				ent:SetupBones()
@@ -2172,6 +2198,8 @@ if CLIENT then
 				local parent = ent:GetParent()
 
 				local function AddBone(name, id)
+					if filter and !name:lower():find(filter, nil, true) then return end
+
 					local line = panel.bonelist:AddLine(name)
 					panel.bonelist.Bones[id] = line
 					line.id = id
@@ -2216,7 +2244,6 @@ if CLIENT then
 							end
 						end
 					end
-					line:SetTooltip(string.TrimLeft(name))
 
 					//Right Click: Show a dropdown menu with individual bone copy/paste options
 					line.OnRightClick = function()
@@ -2427,6 +2454,8 @@ if CLIENT then
 			else
 				//Add a placeholder line explaining why the list is empty
 				local line = panel.bonelist:AddLine("(select a model above to edit its bones)")
+				//Close the bonemanip options while there's no bone selected
+				panel.UpdateBoneManipOptions()
 			end
 
 		end
@@ -2446,6 +2475,7 @@ if CLIENT then
 		panel.bonemanipcontainer.Header:SetTall(0)
 		panel.bonemanipcontainer:DockPadding(0,0,0,10) //add extra padding to the bottom of the container, so that the bottom checkbox isn't right up against the edge
 		panel:AddPanel(panel.bonemanipcontainer)
+		panel.bonemanipcontainer:GetParent():DockMargin(0,-9,0,0) //move it closer to the bonelist
 
 		panel.UpdatingBoneManipOptions = false
 		panel.UpdateBoneManipOptions = function()
@@ -2484,16 +2514,18 @@ if CLIENT then
 
 				//if the keyboard focus is on a slider's text field when we update the slider's value, then the text value won't update correctly,
 				//so make sure to take the focus off of the text fields first
-				panel.slider_trans_x.TextArea:KillFocus()
-				panel.slider_trans_y.TextArea:KillFocus()
-				panel.slider_trans_z.TextArea:KillFocus()
-				panel.slider_rot_p.TextArea:KillFocus()
-				panel.slider_rot_y.TextArea:KillFocus()
-				panel.slider_rot_r.TextArea:KillFocus()
-				panel.slider_scale_x.TextArea:KillFocus()
-				panel.slider_scale_y.TextArea:KillFocus()
-				panel.slider_scale_z.TextArea:KillFocus()
-				panel.slider_scale_xyz.TextArea:KillFocus()
+				if !panel.bonefilter:HasFocus() then //running KillFocus on one of the other panels also kills the focus on the filter textentry, which interrupts the user while typing, so make sure not to do that
+					panel.slider_trans_x.TextArea:KillFocus()
+					panel.slider_trans_y.TextArea:KillFocus()
+					panel.slider_trans_z.TextArea:KillFocus()
+					panel.slider_rot_p.TextArea:KillFocus()
+					panel.slider_rot_y.TextArea:KillFocus()
+					panel.slider_rot_r.TextArea:KillFocus()
+					panel.slider_scale_x.TextArea:KillFocus()
+					panel.slider_scale_y.TextArea:KillFocus()
+					panel.slider_scale_z.TextArea:KillFocus()
+					panel.slider_scale_xyz.TextArea:KillFocus()
+				end
 
 				panel.slider_trans_x:SetValue(trans.x)
 				panel.slider_trans_y:SetValue(trans.y)
@@ -2643,7 +2675,7 @@ if CLIENT then
 		panel.targetbonelist_label = vgui.Create("DLabel", panel.targetbonelist)
 			panel.targetbonelist_label:SetText("Target Bone")
 			panel.targetbonelist_label:SetDark(true)
-			panel.targetbonelist:SetHeight(25)
+			panel.targetbonelist:SetHeight(20)
 			panel.targetbonelist:Dock(TOP)
 		panel.bonemanipcontainer:AddItem(panel.targetbonelist_label, panel.targetbonelist)
 
@@ -2971,7 +3003,7 @@ if CLIENT then
 				tab[line.id] = true
 			end
 			//Update the bonelist, to change the order the bones are displayed in and/or update their display names
-			panel.bonelist.PopulateBoneList()
+			panel.bonelist.PopulateBoneList(true) //"true" arg keeps the bone filter as-is instead of clearing it
 			//Now restore the selected bones
 			panel.bonelist:ClearSelection()
 			for k, line in pairs (panel.bonelist:GetLines()) do

@@ -1097,9 +1097,9 @@ if CLIENT then
 			end
 		end
 
-		//fix: going out of the parent's PVS (e.g. going out of bounds) removes the EF_BONEMERGE effect; this breaks shadow rendering and causes this entity not to properly follow its parent
-		//so readd the effect when it happens
-		if !self:IsEffectActive( EF_BONEMERGE ) then
+		//fix: going out of the parent's PVS (e.g. going out of bounds) removes the EF_BONEMERGE effect; this breaks 
+		//shadow rendering and causes this entity not to properly follow its parent so readd the effect when it happens
+		if !self:IsEffectActive(EF_BONEMERGE) then
 			self:AddEffects(EF_BONEMERGE)
 			self:AddEffects(EF_BONEMERGE_FASTCULL)
 		end
