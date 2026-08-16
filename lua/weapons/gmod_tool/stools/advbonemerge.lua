@@ -2159,7 +2159,7 @@ if CLIENT then
 				panel.bonelist.PopulateBoneList(true)
 			end
 		end
-		panel.bonefilter:GetParent():DockMargin(0,0,0,-9) //move it closer to the bonelist
+		panel.bonefilter:GetParent():DockMargin(0,0,0,-11) //move it right up against the bonelist
 
 		panel.bonelist = panel:AddControl("ListBox", { //note: for reference, this is actually a DListView, not a DListBox
 			Label = "Bone", 
@@ -2475,7 +2475,7 @@ if CLIENT then
 		panel.bonemanipcontainer.Header:SetTall(0)
 		panel.bonemanipcontainer:DockPadding(0,0,0,10) //add extra padding to the bottom of the container, so that the bottom checkbox isn't right up against the edge
 		panel:AddPanel(panel.bonemanipcontainer)
-		panel.bonemanipcontainer:GetParent():DockMargin(0,-9,0,0) //move it closer to the bonelist
+		panel.bonemanipcontainer:GetParent():DockMargin(0,-10,0,0) //move it right up against the bonelist
 
 		panel.UpdatingBoneManipOptions = false
 		panel.UpdateBoneManipOptions = function()
