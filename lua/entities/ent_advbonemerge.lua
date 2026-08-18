@@ -138,7 +138,7 @@ if CLIENT then
 			//If our bones haven't changed position in a while, then fall asleep and skip until one of our parent's bones moves,
 			//or until we/our parent get bonemanipped (see function overrides at bottom of this page)
 			//This check isn't the cheapest, but it's still a whole lot better than updating all our bones.
-			if self.LastBoneChangeTime + BoneChangeIntervalCVar:GetFloat() < curtime then
+			if self.AdvBone_AllowSleep and self.LastBoneChangeTime + BoneChangeIntervalCVar:GetFloat() < curtime then
 				if parent.AdvBone_LastParentBoneCheckTime and parent.AdvBone_LastParentBoneCheckTime >= curtime then
 					//This check only needs to be performed once per frame, even if there are multiple models merged to one parent
 					skip = true
@@ -195,8 +195,6 @@ if CLIENT then
 						else
 							self.SavedParentBoneMatrices = parentbones
 						end
-					else
-						skip = true //fix: sleep so we don't calculate renderbounds often if we don't have many bones
 					end
 				end
 			else
@@ -612,6 +610,12 @@ if CLIENT then
 		if BonesHaveChanged then
 			self.LastBoneChangeTime = curtime
 		end
+		//As a failsafe, if FPS is low enough to make the frame time longer than sv_advbone_sleep (<10 FPS by default), then make sure 
+		//to compare at *least* two frames to try to make sure that our parent ent's bones have stopped moving around - otherwise, we'll 
+		//update bones once, and then fall asleep in the very next frame without checking. This is bad because it can cause this model to 
+		//freeze intermittently while the parent animates (i.e. gun attachments on a character playing a subtle idle animation), or fall 
+		//asleep in a position out-of-sync with the parent (i.e. bones merged to jigglebones)
+		self.AdvBone_AllowSleep = true//!BonesHaveChanged 
 	end
 
 	function ENT:CalcAbsolutePosition(pos, ang)
