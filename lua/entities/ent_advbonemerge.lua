@@ -6,8 +6,8 @@ ENT.PrintName			= "Advanced Bonemerge Entity"
 ENT.Spawnable			= false
 ENT.RenderGroup			= false //let the engine set the rendergroup by itself
 
-
-
+local cv_sleep = CreateConVar("sv_advbone_sleep", 0.1, {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Time interval used by ent_advbonemerge to enter sleep mode - if the entity's bones haven't changed position for this long, then fall asleep and stop building new bone positions to save perf, until woken up by entity movement, parent bone movement, etc.", 0, 1) 
+//this is serverside because we also use it to throttle how often the server can send messages to clients telling them to wake ents back up; see AdvBone_ResetBoneChangeTimeOnChildren further down
 
 function ENT:SetupDataTables()
 
@@ -138,7 +138,7 @@ if CLIENT then
 			//If our bones haven't changed position in a while, then fall asleep and skip until one of our parent's bones moves,
 			//or until we/our parent get bonemanipped (see function overrides at bottom of this page)
 			//This check isn't the cheapest, but it's still a whole lot better than updating all our bones.
-			if self.LastBoneChangeTime + (FrameTime() * 10) < curtime then
+			if self.AdvBone_AllowSleep and self.LastBoneChangeTime + cv_sleep:GetFloat() < curtime then
 				if parent.AdvBone_LastParentBoneCheckTime and parent.AdvBone_LastParentBoneCheckTime >= curtime then
 					//This check only needs to be performed once per frame, even if there are multiple models merged to one parent
 					skip = true
@@ -195,7 +195,6 @@ if CLIENT then
 						else
 							self.SavedParentBoneMatrices = parentbones
 						end
-						skip = true //TODO: saw this when looking through code, is this right? it's not here in prop_animated, is this to cover spme edge case i forgot to comment? doesn't seem to be causing problems.
 					end
 				end
 			else
@@ -611,6 +610,12 @@ if CLIENT then
 		if BonesHaveChanged then
 			self.LastBoneChangeTime = curtime
 		end
+		//As a failsafe, if FPS is low enough to make the frame time longer than sv_advbone_sleep (<10 FPS by default), then make sure 
+		//to compare at *least* two frames to try to make sure that our parent ent's bones have stopped moving around - otherwise, we'll 
+		//update bones once, and then fall asleep in the very next frame without checking. This is bad because it can cause this model to 
+		//freeze intermittently while the parent animates (i.e. gun attachments on a character playing a subtle idle animation), or fall 
+		//asleep in a position out-of-sync with the parent (i.e. bones merged to jigglebones)
+		self.AdvBone_AllowSleep = !BonesHaveChanged 
 	end
 
 	function ENT:CalcAbsolutePosition(pos, ang)
@@ -1552,11 +1557,9 @@ AdvBone_ResetBoneChangeTimeOnChildren = function(ent, networking) //global func 
 			local class = ent2:GetClass()
 			if class == "ent_advbonemerge" or class == "prop_animated" then
 				//Limit how often the server sends this to clients; multiple bone manips at once or ragdoll movements i.e. Stop Motion Helper will run this several times per frame
-				//TODO: can we delay this longer? the client waits until 10 *frames* after LastBoneChangeTime to let BuildBonePositions fall asleep, which of course isn't consistent with server 
-				//tickrate at all, so i don't know how we'd add any more of a delay without potentially breaking things for players with an insanely high framerate.
 				local time = CurTime()
 				ent.AdvBone_ResetBoneChangeTimeOnChildren_LastSent = ent.AdvBone_ResetBoneChangeTimeOnChildren_LastSent or time
-				if time > ent.AdvBone_ResetBoneChangeTimeOnChildren_LastSent then
+				if time > ent.AdvBone_ResetBoneChangeTimeOnChildren_LastSent + cv_sleep:GetFloat() then
 					ent.AdvBone_ResetBoneChangeTimeOnChildren_LastSent = time
 					net.Start("AdvBone_ResetBoneChangeTimeOnChildren_SendToCl", true)
 						net.WriteEntity(ent)
