@@ -6,7 +6,10 @@ ENT.PrintName			= "Advanced Bonemerge Entity"
 ENT.Spawnable			= false
 ENT.RenderGroup			= false //let the engine set the rendergroup by itself
 
-local cv_sleep = CreateConVar("sv_advbone_sleep", 0.1, {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Time interval used by ent_advbonemerge to enter sleep mode - if the entity's bones haven't changed position for this long, then fall asleep and stop building new bone positions to save perf, until woken up by entity movement, parent bone movement, etc.", 0, 1) 
+//this convar has to be shared between advbone and animprop, because both addons' BuildBonePositions functions need to match 
+//the time interval used by advbone's AdvBone_ResetBoneChangeTimeOnChildren function, but it also still needs to work properly 
+//if animprop uses it without advbone installed (i.e. when remapping). this means a single line of duplicate code, lame!
+local cv_sleep = CreateConVar("sv_advbone_sleep", 0.1, {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Time interval used by ent_advbonemerge and prop_animated to enter sleep mode - if the entity's bones haven't changed position for this long, then fall asleep and stop building new bone positions to save perf, until woken up by entity movement, parent bone movement, etc.", 0, 1) 
 //this is serverside because we also use it to throttle how often the server can send messages to clients telling them to wake ents back up; see AdvBone_ResetBoneChangeTimeOnChildren further down
 
 function ENT:SetupDataTables()
@@ -1125,7 +1128,7 @@ if CLIENT then
 		AdvBone_IsSkyboxDrawing = false
 	end)
 
-	CreateClientConVar("cl_advbone_debug_sleep", 0, false, false, "If 1, show sleep status of ent_advbonemerge's BuildBonePositions function (red = asleep, green = awake, no color = not running BuildBonePositions)", 0, 1)
+	CreateClientConVar("cl_advbone_debug_sleep", 0, false, false, "If 1, show sleep status of ent_advbonemerge and prop_animated's BuildBonePositions function (red = asleep, green = awake, no color = not running BuildBonePositions)", 0, 1)
 	local cv_debug_sleep = GetConVar("cl_advbone_debug_sleep")
 
 	function ENT:Draw(flag)
