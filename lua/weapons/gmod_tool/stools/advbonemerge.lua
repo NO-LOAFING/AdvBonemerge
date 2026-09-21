@@ -796,7 +796,7 @@ if SERVER then
 	net.Receive("AdvBone_ToolBoneManip_SendToSv", function(_, ply)
 		local ent = net.ReadEntity()
 		local boneids_read = {}
-		for i = 1, net.ReadInt(9) do
+		for i = 1, net.ReadUInt(9) do
 			boneids_read[i] = net.ReadInt(9)
 		end
 		local which = net.ReadUInt(4)
@@ -1113,7 +1113,7 @@ if SERVER then
 
 		local demofix = net.ReadBool()
 
-		local count = net.ReadInt(9)
+		local count = net.ReadUInt(9)
 		for i = 1, count do
 			local id = net.ReadInt(9)
 
@@ -1221,7 +1221,7 @@ if CLIENT then
 		//Send all of the information to the server so the duplicator can pick it up
 		net.Start("AdvBone_ToolBoneManip_SendToSv")
 			net.WriteEntity(ent)
-			net.WriteInt(#boneids, 9)
+			net.WriteUInt(#boneids, 9) //note: this has an extra bit because a merged ent with max bones (0 to 254, plus our -1 origin manip) has a count of 256, just 1 over the limit of 255
 			for k, line in pairs (boneids) do
 				net.WriteInt(line.id, 9)
 			end
@@ -1371,7 +1371,7 @@ if CLIENT then
 
 				net.WriteBool(engine.IsRecordingDemo())
 
-				net.WriteInt(table.Count(serverinfo), 9)
+				net.WriteUInt(table.Count(serverinfo), 9) //note: this has an extra bit because a merged ent with max bones (0 to 254, plus our -1 origin manip) has a count of 256, just 1 over the limit of 255
 				for _, entry in pairs (serverinfo) do
 					net.WriteInt(entry.id, 9)
 

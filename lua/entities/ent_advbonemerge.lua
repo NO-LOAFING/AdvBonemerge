@@ -696,7 +696,7 @@ if SERVER then
 		net.Start("AdvBone_EntBoneInfoTable_SendToCl", true)
 			net.WriteEntity(ent)
 
-			net.WriteInt(table.Count(ent.AdvBone_BoneInfo), 9)
+			net.WriteUInt(table.Count(ent.AdvBone_BoneInfo), 9) //note: this has an extra bit because a merged ent with max bones (0 to 254, plus our -1 origin manip) has a count of 256, just 1 over the limit of 255
 			for key, entry in pairs (ent.AdvBone_BoneInfo) do
 				net.WriteInt(key, 9)
 
@@ -714,7 +714,7 @@ if SERVER then
 			net.WriteBool(domanips)
 			if domanips then
 				//PrintTable(ent.AdvBone_BoneManips)
-				net.WriteInt(table.Count(ent.AdvBone_BoneManips), 9)
+				net.WriteUInt(table.Count(ent.AdvBone_BoneManips), 9) //note: this has an extra bit because a merged ent with max bones (0 to 254, plus our -1 origin manip) has a count of 256, just 1 over the limit of 255
 				for boneID, tab in pairs (ent.AdvBone_BoneManips) do
 					net.WriteInt(boneID, 9)
 					net.WriteBool(tab.p)
@@ -760,7 +760,7 @@ if CLIENT then
 		end
 
 		//new BoneInfo table
-		local count = net.ReadInt(9)
+		local count = net.ReadUInt(9)
 		local tab = {}
 		for i = 1, count do
 			local key = net.ReadInt(9)
@@ -783,7 +783,7 @@ if CLIENT then
 		//first-time AdvBone_BoneManips table
 		local tab2
 		if net.ReadBool() then
-			local count = net.ReadInt(9)
+			local count = net.ReadUInt(9)
 			tab2 = {}
 			for i = 1, count do
 				local key = net.ReadInt(9)
