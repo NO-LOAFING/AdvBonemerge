@@ -43,6 +43,7 @@ local ConstraintsToPreserve = {
 	BoneMerge = true, //Bone Merger addon
 	EasyBonemerge = true, //Easy Bonemerge Tool addon
 	CompositeEntities_Constraint = true, //Composite Bonemerge addon
+	TF2ItemBrowser_Item_SubModel = true, //TF2 Item Browser addon
 }
 
 if SERVER then
